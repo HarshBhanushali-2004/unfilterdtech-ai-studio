@@ -1,0 +1,7 @@
+import { Bell, Monitor, Palette, UserRound } from "lucide-react"
+
+import { PageHeader } from "@/components/dashboard/page-header"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
+
+export default function SettingsPage() { const rows = [{ icon: UserRound, title: "Profile", text: "Manage your name and workspace details." }, { icon: Palette, title: "Appearance", text: "Use the theme menu in the top bar to select light, dark, or system." }, { icon: Bell, title: "Notifications", text: "Receive updates when your creations are ready.", toggle: true }, { icon: Monitor, title: "Desktop experience", text: "Keep your dashboard preferences in sync.", toggle: true }]; return <div className="space-y-8"><PageHeader title="Settings" description="Manage your workspace preferences and account." /><Card><CardHeader><CardTitle>Workspace preferences</CardTitle><CardDescription>These settings apply to your personal AI Studio workspace.</CardDescription></CardHeader><CardContent className="divide-y">{rows.map(({ icon: Icon, title, text, toggle }) => <div key={title} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0"><span className="grid size-9 place-items-center rounded-lg bg-muted"><Icon className="size-4 text-muted-foreground" /></span><div className="flex-1"><p className="text-sm font-medium">{title}</p><p className="mt-0.5 text-sm text-muted-foreground">{text}</p></div>{toggle && <Switch defaultChecked />}</div>)}</CardContent></Card></div> }
