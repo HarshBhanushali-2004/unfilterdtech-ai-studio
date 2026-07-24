@@ -50,6 +50,9 @@ export function StudioWorkspace() {
     () => searchParams.get("project"),
     [searchParams]
   )
+  console.log("Studio selectedProjectId:", selectedProjectId)
+  console.log("Current URL:", window.location.href)
+  console.log("selectedProjectId:", selectedProjectId)
 
   const [sourceType, setSourceType] =
     React.useState<SourceType>("topic")
@@ -261,9 +264,12 @@ export function StudioWorkspace() {
             <OutputPanel
               key={`${contentType}-${generatedContent ? "generated" : "empty"}`}
               content={generatedContent}
-              defaultTab={
-                outputTabByContentType[contentType]
-              }
+              defaultTab={outputTabByContentType[contentType]}
+              projectId={selectedProjectId}
+              prompt={sourceValue}
+              contentType={contentType}
+              tone={tone}
+              creativity={creativity}
             />
           )}
         </div>

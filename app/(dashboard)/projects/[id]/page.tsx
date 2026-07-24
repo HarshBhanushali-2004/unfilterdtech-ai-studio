@@ -118,10 +118,12 @@ export default async function ProjectPage({
           Generate your first AI content for this project.
         </p>
 
-        <Button className="mt-6">
+        <Button asChild className="mt-6">
+        <Link href={`/studio?project=${project.id}`}>
           <Plus className="mr-2 h-4 w-4" />
           Generate Content
-        </Button>
+        </Link>
+      </Button>
       </div>
     </div>
   );
