@@ -56,10 +56,12 @@ export default async function ProjectPage({
             Edit
           </Button>
 
-          <Button>
+          <Button asChild>
+          <Link href={`/studio?project=${project.id}`}>
             <Plus className="mr-2 h-4 w-4" />
             New Creation
-          </Button>
+          </Link>
+        </Button>
         </div>
       </div>
 

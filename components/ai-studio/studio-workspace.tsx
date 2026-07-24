@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { AlertCircle, Sparkles } from "lucide-react"
 
 import { ContentTypeSelector } from "@/components/ai-studio/content-type-selector"
@@ -8,13 +9,34 @@ import { GenerationProgress } from "@/components/ai-studio/generation-progress"
 import { GenerationSettings } from "@/components/ai-studio/generation-settings"
 import { OutputPanel } from "@/components/ai-studio/output-panel"
 import { SourceSelector } from "@/components/ai-studio/source-selector"
-import type { ContentType, OutputTab, SourceType } from "@/components/ai-studio/types"
+import type {
+  ContentType,
+  OutputTab,
+  SourceType,
+} from "@/components/ai-studio/types"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import type { GeneratedInstagramContent } from "@/lib/ai"
 
-const outputTabByContentType: Record<ContentType, OutputTab> = { post: "caption", carousel: "carousel", story: "story", reel: "reel" }
-const apiContentTypeByContentType = { post: "instagram_post", carousel: "carousel", story: "story", reel: "reel" } as const
+const outputTabByContentType: Record<ContentType, OutputTab> = {
+  post: "caption",
+  carousel: "carousel",
+  story: "story",
+  reel: "reel",
+}
+
+const apiContentTypeByContentType = {
+  post: "instagram_post",
+  carousel: "carousel",
+  story: "story",
+  reel: "reel",
+} as const
 
 type GenerateApiResponse = {
   data?: GeneratedInstagramContent
@@ -22,16 +44,66 @@ type GenerateApiResponse = {
 }
 
 export function StudioWorkspace() {
-  const [sourceType, setSourceType] = React.useState<SourceType>("topic")
-  const [sourceValues, setSourceValues] = React.useState<Record<SourceType, string>>({ topic: "", text: "", url: "" })
-  const [contentType, setContentType] = React.useState<ContentType>("post")
+  const searchParams = useSearchParams()
+
+  const selectedProjectId = React.useMemo(
+    () => searchParams.get("project"),
+    [searchParams]
+  )
+
+  const [sourceType, setSourceType] =
+    React.useState<SourceType>("topic")
+
+  const [sourceValues, setSourceValues] = React.useState<
+    Record<SourceType, string>
+  >({
+    topic: "",
+    text: "",
+    url: "",
+  })
+
+  const [contentType, setContentType] =
+    React.useState<ContentType>("post")
+
   const [tone, setTone] = React.useState("confident")
   const [creativity, setCreativity] = React.useState(55)
-  const [generatedContent, setGeneratedContent] = React.useState<GeneratedInstagramContent | null>(null)
+
+  const [generatedContent, setGeneratedContent] =
+    React.useState<GeneratedInstagramContent | null>(null)
+
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
+  const [projectName, setProjectName] =
+    React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!selectedProjectId) {
+      setProjectName(null)
+      return
+    }
+
+    async function loadProject() {
+      try {
+        const res = await fetch(`/api/projects/${selectedProjectId}`)
+
+        if (!res.ok) {
+          setProjectName(null)
+          return
+        }
+
+        const project = await res.json()
+        setProjectName(project.name)
+      } catch {
+        setProjectName(null)
+      }
+    }
+
+    loadProject()
+  }, [selectedProjectId])
+
   const sourceValue = sourceValues[sourceType]
+
   const generate = async () => {
     if (!sourceValue.trim() || isLoading) return
 
@@ -41,34 +113,187 @@ export function StudioWorkspace() {
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           sourceType,
           input: sourceValue,
-          contentTypes: [apiContentTypeByContentType[contentType]],
+          contentTypes: [
+            apiContentTypeByContentType[contentType],
+          ],
           tone,
           creativity,
         }),
       })
-      const payload = (await response.json()) as GenerateApiResponse
 
-      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to generate content right now.")
+      const payload =
+        (await response.json()) as GenerateApiResponse
+
+      if (!response.ok || !payload.data) {
+        throw new Error(
+          payload.error ??
+            "Unable to generate content right now."
+        )
+      }
 
       setGeneratedContent(payload.data)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to generate content right now.")
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to generate content right now."
+      )
     } finally {
       setIsLoading(false)
     }
   }
 
-  const clearGeneratedContent = () => { setGeneratedContent(null); setError(null) }
-  const handleSourceTypeChange = (nextSourceType: SourceType) => { setSourceType(nextSourceType); clearGeneratedContent() }
-  const handleSourceValueChange = (type: SourceType, value: string) => { setSourceValues((current) => ({ ...current, [type]: value })); clearGeneratedContent() }
+  const clearGeneratedContent = () => {
+    setGeneratedContent(null)
+    setError(null)
+  }
 
-  return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:items-start"><Card><CardContent className="space-y-7 pt-6"><SourceSelector sourceType={sourceType} values={sourceValues} onSourceTypeChange={handleSourceTypeChange} onValueChange={handleSourceValueChange} /><ContentTypeSelector value={contentType} onChange={(value) => { setContentType(value); clearGeneratedContent() }} /><GenerationSettings tone={tone} creativity={creativity} onToneChange={(value) => { setTone(value); clearGeneratedContent() }} onCreativityChange={(value) => { setCreativity(value); clearGeneratedContent() }} /><Button className="w-full bg-violet-600 text-white hover:bg-violet-700" size="lg" disabled={!sourceValue.trim() || isLoading} onClick={generate}>{isLoading ? <><Sparkles className="animate-pulse" />Generating content…</> : <><Sparkles />Generate {contentType === "post" ? "Instagram post" : contentType}</>}</Button></CardContent></Card><div className="space-y-6">{isLoading ? <GenerationProgress progress={55} /> : error ? <GenerationError message={error} /> : <OutputPanel key={`${contentType}-${generatedContent ? "generated" : "empty"}`} content={generatedContent} defaultTab={outputTabByContentType[contentType]} />}</div></div>
+  const handleSourceTypeChange = (
+    nextSourceType: SourceType
+  ) => {
+    setSourceType(nextSourceType)
+    clearGeneratedContent()
+  }
+
+  const handleSourceValueChange = (
+    type: SourceType,
+    value: string
+  ) => {
+    setSourceValues((current) => ({
+      ...current,
+      [type]: value,
+    }))
+
+    clearGeneratedContent()
+  }
+
+  return (
+    <div className="space-y-6">
+      {projectName && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                📁
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Creating content for
+                </p>
+
+                <p className="text-lg font-semibold">
+                  {projectName}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:items-start">
+        <Card>
+          <CardContent className="space-y-7 pt-6">
+            <SourceSelector
+              sourceType={sourceType}
+              values={sourceValues}
+              onSourceTypeChange={handleSourceTypeChange}
+              onValueChange={handleSourceValueChange}
+            />
+
+            <ContentTypeSelector
+              value={contentType}
+              onChange={(value) => {
+                setContentType(value)
+                clearGeneratedContent()
+              }}
+            />
+
+            <GenerationSettings
+              tone={tone}
+              creativity={creativity}
+              onToneChange={(value) => {
+                setTone(value)
+                clearGeneratedContent()
+              }}
+              onCreativityChange={(value) => {
+                setCreativity(value)
+                clearGeneratedContent()
+              }}
+            />
+
+            <Button
+              className="w-full bg-violet-600 text-white hover:bg-violet-700"
+              size="lg"
+              disabled={!sourceValue.trim() || isLoading}
+              onClick={generate}
+            >
+              {isLoading ? (
+                <>
+                  <Sparkles className="animate-pulse mr-2 h-4 w-4" />
+                  Generating content...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate{" "}
+                  {contentType === "post"
+                    ? "Instagram post"
+                    : contentType}
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          {isLoading ? (
+            <GenerationProgress progress={55} />
+          ) : error ? (
+            <GenerationError message={error} />
+          ) : (
+            <OutputPanel
+              key={`${contentType}-${generatedContent ? "generated" : "empty"}`}
+              content={generatedContent}
+              defaultTab={
+                outputTabByContentType[contentType]
+              }
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function GenerationError({ message }: { message: string }) {
-  return <Card className="border-destructive/30"><CardHeader><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span><div><CardTitle>Generation unavailable</CardTitle><CardDescription className="mt-1">{message}</CardDescription></div></div></CardHeader></Card>
+function GenerationError({
+  message,
+}: {
+  message: string
+}) {
+  return (
+    <Card className="border-destructive/30">
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertCircle className="size-5" />
+          </span>
+
+          <div>
+            <CardTitle>Generation unavailable</CardTitle>
+
+            <CardDescription className="mt-1">
+              {message}
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+    </Card>
+  )
 }
