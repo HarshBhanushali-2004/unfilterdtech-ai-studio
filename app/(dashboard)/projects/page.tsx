@@ -10,6 +10,13 @@ import { ProjectCard } from "@/components/projects/project-card";
 
 export default async function ProjectsPage() {
   const projects = await prisma.project.findMany({
+    include: {
+      _count: {
+        select: {
+          creations: true,
+        },
+      },
+    },
     orderBy: {
       createdAt: "desc",
     },
@@ -51,7 +58,7 @@ export default async function ProjectsPage() {
               name={project.name}
               description={project.description}
               color={project.color ?? "#7C3AED"}
-              creations={0}
+              creations={project._count.creations}
             />
           ))}
         </div>
