@@ -114,3 +114,49 @@ export async function generateInstagramContent(
 
   return validation.data
 }
+export async function rewriteContent(
+  originalContent: string,
+  instruction: string
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  const modelName = process.env.GEMINI_MODEL ?? "gemini-2.5-flash"
+
+  if (!apiKey) {
+    throw new AIServiceError("Missing GEMINI_API_KEY", 503)
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey)
+
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+  })
+
+  const prompt = `
+You are an expert social media copywriter.
+
+Rewrite the following content.
+
+Instruction:
+${instruction}
+
+Original Content:
+${originalContent}
+
+Return ONLY the rewritten content.
+No markdown.
+No explanation.
+No code block.
+`
+
+  try {
+    const result = await model.generateContent(prompt)
+
+    return result.response.text().trim()
+  } catch (error) {
+    throw new AIServiceError(
+      error instanceof Error ? error.message : "Rewrite failed",
+      502,
+      error
+    )
+  }
+}

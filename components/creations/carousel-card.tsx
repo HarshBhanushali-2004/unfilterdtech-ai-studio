@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
-type CarouselSlide = {
+export type CarouselSlide = {
   slideNumber: number;
   headline: string;
   body: string;

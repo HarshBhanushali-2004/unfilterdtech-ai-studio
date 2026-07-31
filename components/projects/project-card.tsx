@@ -1,15 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { FolderOpen, MoreHorizontal } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FolderOpen } from "lucide-react";
+import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { ProjectActions } from "./project-actions";
+import { EditProjectDialog } from "./edit-project-dialog";
+
 
 export interface ProjectCardProps {
   id: string;
   name: string;
   description: string | null;
   color: string;
+
+  brandKit?: {
+    id: string;
+    name: string;
+  } | null;
+
   creations?: number;
 }
 
@@ -18,29 +29,53 @@ export function ProjectCard({
   name,
   description,
   color,
+  brandKit,
   creations = 0,
 }: ProjectCardProps) {
+  const router = useRouter();
+  const [editOpen, setEditOpen] = useState(false);
+
+  async function deleteProject() {
+    if (!confirm("Delete this project?")) return;
+
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
+      toast.success("Project deleted");
+
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to delete project"
+      );
+    }
+  }
   return (
-    <Link href={`/projects/${id}`}>
-      <div className="group relative rounded-2xl border bg-card p-6 transition-all hover:border-primary/40 hover:shadow-lg">
+  <>
+    <div className="group relative rounded-2xl border bg-card p-6 transition-all hover:border-primary/40 hover:shadow-lg">
+      <div className="absolute right-6 top-6 z-10">
+        <ProjectActions
+          onEdit={() => setEditOpen(true)}
+          onDelete={deleteProject}
+        />
+      </div>
+
+      <Link href={`/projects/${id}`} className="block">
         <div className="flex items-start justify-between">
           <div
             className="h-4 w-4 rounded-full"
             style={{ backgroundColor: color }}
           />
-
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className="opacity-0 transition-opacity group-hover:opacity-100"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
         </div>
 
         <div className="mt-5">
@@ -49,6 +84,11 @@ export function ProjectCard({
           <p className="mt-1 line-clamp-2 min-h-[40px] text-sm text-muted-foreground">
             {description || "No description"}
           </p>
+          {brandKit && (
+            <div className="mt-3 inline-flex items-center rounded-full border px-2 py-1 text-xs">
+              🏷 {brandKit.name}
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
@@ -59,7 +99,20 @@ export function ProjectCard({
 
           <span className="text-xs">Open →</span>
         </div>
-      </div>
-    </Link>
+      </Link>
+    </div>
+      <EditProjectDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        project={{
+          id,
+          name,
+          description,
+          color,
+          brandKit,
+        }}
+        onUpdated={() => router.refresh()}
+      />
+    </>
   );
 }

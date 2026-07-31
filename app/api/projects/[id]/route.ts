@@ -37,3 +37,63 @@ export async function GET(
     );
   }
 }
+export async function PATCH(
+  request: Request,
+  { params }: RouteContext
+) {
+  try {
+    const { id } = await params;
+
+    const body = await request.json();
+
+    const project = await prisma.project.update({
+      where: {
+        id,
+      },
+      data: {
+        name: body.name,
+        description: body.description,
+        color: body.color,
+        brandKitId: body.brandKitId || null,
+      },
+    });
+
+    return NextResponse.json(project);
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      { error: "Failed to update project" },
+      { status: 500 }
+    );
+  }
+}
+export async function DELETE(
+  request: Request,
+  { params }: RouteContext
+) {
+  try {
+    const { id } = await params;
+
+    await prisma.project.delete({
+      where: {
+        id,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        error: "Failed to delete project",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}

@@ -5,13 +5,13 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
-type ReelScene = {
+export type ReelScene = {
   sceneNumber: number;
   narration: string;
   visual: string;
 };
 
-type Reel = {
+export type Reel = {
   hook: string;
   scenes: ReelScene[];
   cta: string;

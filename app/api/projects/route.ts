@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+
 export async function GET() {
   try {
     const projects = await prisma.project.findMany({
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
         name,
         description: body.description ?? "",
         color: body.color ?? "#7C3AED",
+        brandKitId: body.brandKitId || null,
       },
     });
 

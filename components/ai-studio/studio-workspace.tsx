@@ -50,10 +50,6 @@ export function StudioWorkspace() {
     () => searchParams.get("project"),
     [searchParams]
   )
-  console.log("Studio selectedProjectId:", selectedProjectId)
-  console.log("Current URL:", window.location.href)
-  console.log("selectedProjectId:", selectedProjectId)
-
   const [sourceType, setSourceType] =
     React.useState<SourceType>("topic")
 
@@ -81,29 +77,44 @@ export function StudioWorkspace() {
     React.useState<string | null>(null)
 
   React.useEffect(() => {
-    if (!selectedProjectId) {
-      setProjectName(null)
-      return
-    }
+    let ignore = false;
 
     async function loadProject() {
+      if (!selectedProjectId) {
+        if (!ignore) {
+          setProjectName(null);
+        }
+        return;
+      }
+
       try {
-        const res = await fetch(`/api/projects/${selectedProjectId}`)
+        const res = await fetch(`/api/projects/${selectedProjectId}`);
 
         if (!res.ok) {
-          setProjectName(null)
-          return
+          if (!ignore) {
+            setProjectName(null);
+          }
+          return;
         }
 
-        const project = await res.json()
-        setProjectName(project.name)
+        const project = await res.json();
+
+        if (!ignore) {
+          setProjectName(project.name);
+        }
       } catch {
-        setProjectName(null)
+        if (!ignore) {
+          setProjectName(null);
+        }
       }
     }
 
-    loadProject()
-  }, [selectedProjectId])
+    void loadProject();
+
+    return () => {
+      ignore = true;
+    };
+  }, [selectedProjectId]);
 
   const sourceValue = sourceValues[sourceType]
 
@@ -127,6 +138,7 @@ export function StudioWorkspace() {
           ],
           tone,
           creativity,
+          projectId: selectedProjectId ?? undefined,
         }),
       })
 

@@ -4,10 +4,9 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import * as React from "react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import {
   Bot,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   FolderKanban,
   LayoutGrid,
@@ -49,7 +48,9 @@ function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3">
       <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20">
-        <Bot className="size-5" />
+      <Bot className={cn(
+        compact ? "size-4" : "size-5"
+      )} />
       </span>
       {!compact && (
         <span className="min-w-0 leading-tight">
@@ -66,7 +67,7 @@ function SidebarContent({ compact = false, onNavigate }: { compact?: boolean; on
 
   return (
     <div className="flex h-full flex-col">
-      <div className={cn("flex h-18 items-center px-4", compact && "justify-center px-2")}>
+      <div className={cn("flex h-18 items-center px-4", compact && "justify-center")}>
         <Brand compact={compact} />
       </div>
       <div className="px-3 py-4">
@@ -133,14 +134,36 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-muted/35">
-      <aside className={cn("fixed inset-y-0 left-0 z-30 hidden border-r bg-background transition-[width] duration-200 lg:block", collapsed ? "w-16" : "w-64")}>
-        <SidebarContent compact={collapsed} />
-        <Button variant="outline" size="icon-xs" className="absolute top-6 -right-3 z-10 rounded-full bg-background" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <ChevronRight /> : <ChevronLeft />}</Button>
+      <aside className={cn("fixed inset-y-0 left-0 z-30 hidden border-r bg-background transition-[width] duration-200 lg:block",collapsed ? "w-20" : "w-64")}>
+        <SidebarContent compact={collapsed} />    
       </aside>
-      <div className={cn("min-h-screen transition-[margin] duration-200", collapsed ? "lg:ml-16" : "lg:ml-64")}>
+      <div className={cn("min-h-screen transition-[margin] duration-200", collapsed ? "lg:ml-20" : "lg:ml-64")}>
           <header className="sticky top-0 z-50 flex h-18 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur lg:px-8">          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}><SheetTrigger asChild><Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation"><Menu /></Button></SheetTrigger><SheetContent side="left" showCloseButton={false} className="w-72 p-0"><SidebarContent onNavigate={() => setMobileOpen(false)} /></SheetContent></Sheet>
-          <div className="relative hidden max-w-md flex-1 sm:block"><Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-9 bg-muted/50 pl-9 shadow-none" placeholder="Search projects, creations..." /></div>
-          <div className="ml-auto flex items-center gap-1"><Button asChild size="sm" className="hidden bg-violet-600 text-white hover:bg-violet-700 sm:inline-flex"><Link href="/studio"><Plus />Create</Link></Button><ThemeMenu /><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="ml-1 rounded-full"><Avatar className="size-7"><AvatarFallback className="bg-violet-100 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">HB</AvatarFallback></Avatar></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel><p>Harsh Bhanushali</p><p className="font-normal text-muted-foreground">Creator workspace</p></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem><UserRound />Profile</DropdownMenuItem><DropdownMenuItem asChild><Link href="/settings"><Settings />Settings</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+          <div className="flex flex-1 items-center gap-2 max-w-xl">
+            <Button
+              variant="outline"
+              size="icon"
+              className="hidden h-9 w-9 shrink-0 lg:inline-flex"
+              onClick={() => setCollapsed((value) => !value)}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+
+              <div className="relative hidden max-w-md flex-1 sm:block">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 bg-muted/50 pl-9 shadow-none"
+                placeholder="Search projects, creations..."
+              />
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-1"><Button asChild size="sm" className="hidden bg-violet-600 text-white hover:bg-violet-700 sm:inline-flex"><Link href="/studio"><Plus />Create</Link></Button><ThemeMenu /><DropdownMenu><DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="ml-1 rounded-full"><Avatar className="size-7"><AvatarFallback className="bg-violet-100 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">HB</AvatarFallback></Avatar></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel><p>Harsh Bhanushali</p><p className="font-normal text-muted-foreground">Creator workspace</p></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem><UserRound />Profile</DropdownMenuItem><DropdownMenuItem asChild><Link href="/settings"><Settings />Settings</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         </header>
         <main className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>

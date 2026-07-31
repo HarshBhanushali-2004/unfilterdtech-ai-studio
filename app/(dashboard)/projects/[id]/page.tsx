@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
+import { EditProjectButton } from "@/components/projects/edit-project-button";
 
 export default async function ProjectPage({
   params,
@@ -18,6 +19,12 @@ export default async function ProjectPage({
       creations: {
         orderBy: {
           createdAt: "desc",
+        },
+      },
+      brandKit: {
+        select: {
+          id: true,
+          name: true,
         },
       },
     },
@@ -75,10 +82,15 @@ export default async function ProjectPage({
         </div>
 
         <div className="flex gap-3">
-          <Button variant="outline">
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
+        <EditProjectButton
+          project={{
+            id: project.id,
+            name: project.name,
+            description: project.description,
+            color: project.color ?? "#7C3AED",
+            brandKit: project.brandKit,
+          }}
+        />
 
           <Button asChild>
           <Link href={`/studio?project=${project.id}`}>

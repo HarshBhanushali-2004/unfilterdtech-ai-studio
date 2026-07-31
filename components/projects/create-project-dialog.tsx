@@ -16,6 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const COLORS = [
   "#7C3AED",
@@ -26,15 +34,73 @@ const COLORS = [
   "#DB2777",
 ];
 
-export function CreateProjectDialog() {
+export type CreatedProject = {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+};
+
+type CreateProjectDialogProps = {
+  /** Controlled open state. Omit to manage open/closed internally (default usage). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Called with the newly created project after a successful save. */
+  onCreated?: (project: CreatedProject) => void;
+  /** Hide the built-in "New project" trigger button, e.g. when embedding this
+   * dialog inside another flow that supplies its own trigger. */
+  hideTrigger?: boolean;
+};
+
+export function CreateProjectDialog({
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
+  onCreated,
+  hideTrigger = false,
+}: CreateProjectDialogProps = {}) {
   const router = useRouter();
 
-  const [open, setOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? openProp : internalOpen;
+
+  function setOpen(nextOpen: boolean) {
+    if (!isControlled) {
+      setInternalOpen(nextOpen);
+    }
+    onOpenChangeProp?.(nextOpen);
+  }
+
   const [loading, setLoading] = useState(false);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  const [brandKits, setBrandKits] = useState<
+      { id: string; name: string }[]
+    >([]);
+  useEffect(() => {
+  async function loadBrandKits() {
+      try {
+        const res = await fetch("/api/brand-kit");
+
+        if (!res.ok) {
+          toast.error("Unable to load Brand Kits.");
+          return;
+        }
+
+        const data = await res.json();
+        setBrandKits(data);
+      } catch {
+        toast.error("Unable to load Brand Kits.");
+      }
+    }
+
+    loadBrandKits();
+  }, []);
+
+const [brandKitId, setBrandKitId] =
+  useState("");
 
   async function createProject() {
     if (!name.trim()) {
@@ -54,6 +120,7 @@ export function CreateProjectDialog() {
           name,
           description,
           color,
+          brandKitId,
         }),
       });
 
@@ -71,6 +138,7 @@ export function CreateProjectDialog() {
       setColor(COLORS[0]);
 
       router.refresh();
+      onCreated?.(data);
     } catch (error) {
     const message =
     error instanceof Error ? error.message : "Something went wrong";
@@ -82,10 +150,12 @@ export function CreateProjectDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>
-        <Plus className="mr-2 h-4 w-4" />
-        New project
-      </Button>
+      {!hideTrigger && (
+        <Button onClick={() => setOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          New project
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -115,6 +185,31 @@ export function CreateProjectDialog() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                Brand Kit
+              </p>
+
+              <Select
+                value={brandKitId}
+                onValueChange={setBrandKitId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a Brand Kit (optional)" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {brandKits.map((brand) => (
+                    <SelectItem
+                      key={brand.id}
+                      value={brand.id}
+                    >
+                      {brand.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div>
               <p className="mb-2 text-sm font-medium">Color</p>

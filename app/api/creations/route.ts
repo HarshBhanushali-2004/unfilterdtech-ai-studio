@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { ContentType } from "@prisma/client";
+import { z } from "zod";
+
 import { prisma } from "@/lib/prisma";
+import { formatZodError } from "@/lib/validation";
 
 const contentTypeMap: Record<string, ContentType> = {
   post: ContentType.POST,
@@ -9,23 +12,45 @@ const contentTypeMap: Record<string, ContentType> = {
   reel: ContentType.REEL,
 };
 
+const createCreationSchema = z.object({
+  title: z.string().trim().min(1, "Title is required."),
+  prompt: z.string().trim().min(1, "Prompt is required."),
+  caption: z.string().trim().min(1, "Caption is required."),
+  contentType: z.string().refine((value) => value in contentTypeMap, {
+    message: `Invalid contentType. Expected one of: ${Object.keys(
+      contentTypeMap
+    ).join(", ")}.`,
+  }),
+});
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    const validation = createCreationSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: formatZodError(validation.error) },
+        { status: 400 }
+      );
+    }
+
+    const contentType = contentTypeMap[validation.data.contentType];
 
     const creation = await prisma.creation.create({
       data: {
         projectId: body.projectId ?? null,
 
-        title: body.title,
-        prompt: body.prompt,
+        title: validation.data.title,
+        prompt: validation.data.prompt,
 
-        contentType: contentTypeMap[body.contentType],
+        contentType,
 
         tone: body.tone,
         creativity: body.creativity,
 
-        caption: body.caption,
+        caption: validation.data.caption,
 
         hashtags: body.hashtags,
         carousel: body.carousel,
@@ -36,7 +61,10 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(creation);
+    return NextResponse.json({
+      success: true,
+      id: creation.id,
+    });
   } catch (error) {
     console.error(error);
 

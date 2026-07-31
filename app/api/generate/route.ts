@@ -1,12 +1,34 @@
 import {
   AIServiceError,
+  buildBrandContext,
   buildInstagramContentPrompt,
   generateContentInputSchema,
   generateInstagramContent,
   generatedInstagramContentSchema,
 } from "@/lib/ai"
+import { prisma } from "@/lib/prisma"
+import { formatZodError } from "@/lib/validation"
 
 export const runtime = "nodejs"
+
+async function loadBrandContext(projectId: string | undefined) {
+  if (!projectId) return ""
+
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { brandKit: true },
+    })
+
+    return buildBrandContext(project?.brandKit)
+  } catch (error) {
+    // Brand Kit guidance is a nice-to-have, not a requirement — a missing
+    // project, a deleted Brand Kit, or a database hiccup should never stop
+    // generation from proceeding without it.
+    console.error("Failed to load Brand Kit context:", error)
+    return ""
+  }
+}
 
 export async function POST(request: Request) {
   let body: unknown
@@ -19,13 +41,14 @@ export async function POST(request: Request) {
   const inputValidation = generateContentInputSchema.safeParse(body)
   if (!inputValidation.success) {
     return Response.json(
-      { error: "Invalid generation request.", details: inputValidation.error.flatten() },
+      { error: formatZodError(inputValidation.error) },
       { status: 400 }
     )
   }
 
   try {
-    const prompt = buildInstagramContentPrompt(inputValidation.data)
+    const brandContext = await loadBrandContext(inputValidation.data.projectId)
+    const prompt = buildInstagramContentPrompt(inputValidation.data, brandContext)
     const generatedContent = await generateInstagramContent(prompt)
     const outputValidation = generatedInstagramContentSchema.safeParse(generatedContent)
 

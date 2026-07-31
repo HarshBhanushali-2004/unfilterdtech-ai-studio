@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
-type StoryFrame = {
+export type StoryFrame = {
   frameNumber: number;
   text: string;
   visualSuggestion: string;

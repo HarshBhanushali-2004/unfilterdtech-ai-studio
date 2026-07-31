@@ -43,4 +43,5 @@ export type GenerateContentInput = {
   contentTypes: AIContentType[]
   tone: string
   creativity: number
+  projectId?: string
 }

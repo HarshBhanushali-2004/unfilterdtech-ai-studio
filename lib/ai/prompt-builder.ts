@@ -6,10 +6,13 @@ const sourceLabels = {
   url: "reference URL",
 } as const
 
-export function buildInstagramContentPrompt({ sourceType, input, contentTypes, tone, creativity }: GenerateContentInput) {
+export function buildInstagramContentPrompt(
+  { sourceType, input, contentTypes, tone, creativity }: GenerateContentInput,
+  brandContext?: string
+) {
   const requestedFormats = contentTypes.join(", ")
 
-  return `You are a senior social media strategist for Instagram. Create original, useful, brand-safe content using the provided source material.
+  const prompt = `You are a senior social media strategist for Instagram. Create original, useful, brand-safe content using the provided source material.
 
 Source type: ${sourceLabels[sourceType]}
 Source material:
@@ -54,4 +57,6 @@ Return exactly one valid JSON object. Do not include markdown, code fences, comm
 }
 
 Populate every field, including formats that were not explicitly requested. Keep captions concise, make hashtags relevant and without duplicate entries, and number slides, frames, and scenes sequentially starting at 1.`
+
+  return brandContext ? `${brandContext}\n\n${prompt}` : prompt
 }

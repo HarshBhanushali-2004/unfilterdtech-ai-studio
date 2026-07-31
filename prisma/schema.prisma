@@ -19,10 +19,15 @@ model Project {
   description String?
   color       String?     @default("#3B82F6")
 
+  brandKitId  String?
+  brandKit    BrandKit?   @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
+
   creations   Creation[]
 
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  @@index([brandKitId])
 }
 
 model Creation {
@@ -52,4 +57,35 @@ model Creation {
 
   @@index([projectId])
   @@index([createdAt])
+}
+model BrandKit {
+  id              String      @id @default(cuid())
+
+  name            String
+  website         String?
+  industry        String?
+  description     String?
+
+  targetAudience  String?
+  language        String?     @default("English")
+
+  tone            String?
+  writingStyle    String?
+  emojiStyle      String?
+  ctaStyle        String?
+
+  logoUrl         String?
+
+  primaryColor    String?
+  secondaryColor  String?
+  accentColor     String?
+
+  keywords        String[]
+  hashtags        String[]
+  avoidWords      String[]
+
+  projects        Project[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 }

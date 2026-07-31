@@ -1,6 +1,11 @@
 export { generateContentInputSchema, generatedInstagramContentSchema } from "./schemas"
 export { buildInstagramContentPrompt } from "./prompt-builder"
-export { AIServiceError, generateInstagramContent } from "./gemini"
+export { buildBrandContext } from "./brand-context"
+export {
+  AIServiceError,
+  generateInstagramContent,
+  rewriteContent,
+} from "./gemini"
 
 export type {
   AIContentType,

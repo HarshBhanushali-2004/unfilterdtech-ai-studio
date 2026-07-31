@@ -11,6 +11,13 @@ import { ProjectCard } from "@/components/projects/project-card";
 export default async function ProjectsPage() {
   const projects = await prisma.project.findMany({
     include: {
+      brandKit: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+
       _count: {
         select: {
           creations: true,
@@ -52,14 +59,15 @@ export default async function ProjectsPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              id={project.id}
-              name={project.name}
-              description={project.description}
-              color={project.color ?? "#7C3AED"}
-              creations={project._count.creations}
-            />
+          <ProjectCard
+            key={project.id}
+            id={project.id}
+            name={project.name}
+            description={project.description}
+            color={project.color ?? "#7C3AED"}
+            brandKit={project.brandKit}
+            creations={project._count.creations}
+          />
           ))}
         </div>
       )}
