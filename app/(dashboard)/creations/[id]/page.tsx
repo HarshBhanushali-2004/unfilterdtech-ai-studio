@@ -5,6 +5,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { AIEditorPanel } from "@/components/creations/ai-editor-panel";
+import { HashtagsCard } from "@/components/creations/hashtags-card";
+import { CarouselCard } from "@/components/creations/carousel-card";
+import { StoryCard } from "@/components/creations/story-card";
+import { ReelCard } from "@/components/creations/reel-card";
+import type { CarouselSlide, StoryFrame, ReelContent } from "@/lib/ai/types";
+
 export default async function CreationPage({
   params,
 }: {
@@ -104,6 +110,25 @@ export default async function CreationPage({
             content={creation.caption}
           />
         </div>
+      </div>
+
+      {/* Generated Content Preview */}
+      <div className="grid gap-6">
+        {Array.isArray(creation.hashtags) && creation.hashtags.length > 0 && (
+          <HashtagsCard hashtags={creation.hashtags as string[]} />
+        )}
+
+        {Array.isArray(creation.carousel) && creation.carousel.length > 0 && (
+          <CarouselCard slides={creation.carousel as unknown as CarouselSlide[]} />
+        )}
+
+        {Array.isArray(creation.story) && creation.story.length > 0 && (
+          <StoryCard stories={creation.story as unknown as StoryFrame[]} />
+        )}
+
+        {creation.reel && (
+          <ReelCard reel={creation.reel as unknown as ReelContent} />
+        )}
       </div>
     </div>
   );

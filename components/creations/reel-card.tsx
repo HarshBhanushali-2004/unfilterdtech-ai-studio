@@ -13,8 +13,8 @@ export type ReelScene = {
 
 export type Reel = {
   hook: string;
+  script: string;
   scenes: ReelScene[];
-  cta: string;
 };
 
 type ReelCardProps = {
@@ -56,6 +56,16 @@ export function ReelCard({
           </p>
         </div>
 
+        <div className="rounded-xl border bg-muted/30 p-5">
+          <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+            Script
+          </h3>
+
+          <p className="whitespace-pre-wrap break-words">
+            {reel.script}
+          </p>
+        </div>
+
         {reel.scenes?.map((scene) => (
           <div
             key={scene.sceneNumber}
@@ -90,14 +100,6 @@ export function ReelCard({
             </div>
           </div>
         ))}
-
-        <div className="rounded-xl border bg-muted/30 p-5">
-          <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
-            Call To Action
-          </h3>
-
-          <p>{reel.cta}</p>
-        </div>
       </div>
     </div>
   );
