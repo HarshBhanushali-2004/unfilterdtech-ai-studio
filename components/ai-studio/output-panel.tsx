@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 
 
 import type { GeneratedInstagramContent } from "@/lib/ai"
+import { copyToClipboard } from "@/lib/clipboard"
 
 import type { OutputTab } from "./types"
 
@@ -40,7 +41,12 @@ export function OutputPanel({
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const router = useRouter();
   const captionWithHashtags = content ? `${content.caption}\n\n${content.hashtags.map(formatHashtag).join(" ")}` : ""
-  const copyCaption = async () => { if (!content) return; await navigator.clipboard?.writeText(captionWithHashtags); setCopied(true); window.setTimeout(() => setCopied(false), 1600) }
+  const copyCaption = async () => {
+    if (!content) return
+    await copyToClipboard(captionWithHashtags, "Copied to clipboard")
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
   const saveCreation = async (project: string | null = projectId ?? null) => {
     if (!content || isSaving) return
 

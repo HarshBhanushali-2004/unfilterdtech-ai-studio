@@ -34,6 +34,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const existing = await prisma.project.findFirst({
+      where: { name: { equals: name, mode: "insensitive" } },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: `A project named "${name}" already exists.` },
+        { status: 409 }
+      );
+    }
+
     const project = await prisma.project.create({
       data: {
         name,

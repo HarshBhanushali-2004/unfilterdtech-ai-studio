@@ -14,7 +14,6 @@ import {
   Moon,
   Palette,
   Plus,
-  Search,
   Settings,
   Sparkles,
   Sun,
@@ -31,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
+import { GlobalSearch } from "@/components/dashboard/global-search"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -154,13 +153,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               )}
             </Button>
 
-              <div className="relative hidden max-w-md flex-1 sm:block">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="h-9 bg-muted/50 pl-9 shadow-none"
-                placeholder="Search projects, creations..."
-              />
-            </div>
+              <GlobalSearch />
           </div>
           <div className="ml-auto flex items-center gap-1"><Button asChild size="sm" className="hidden bg-violet-600 text-white hover:bg-violet-700 sm:inline-flex"><Link href="/studio"><Plus />Create</Link></Button><ThemeMenu /><DropdownMenu><DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="ml-1 rounded-full"><Avatar className="size-7"><AvatarFallback className="bg-violet-100 text-xs font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">HB</AvatarFallback></Avatar></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel><p>Harsh Bhanushali</p><p className="font-normal text-muted-foreground">Creator workspace</p></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem><UserRound />Profile</DropdownMenuItem><DropdownMenuItem asChild><Link href="/settings"><Settings />Settings</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>

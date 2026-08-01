@@ -1,9 +1,9 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export type CarouselSlide = {
   slideNumber: number;
@@ -16,16 +16,18 @@ type CarouselCardProps = {
   slides: CarouselSlide[];
 };
 
+function formatSlide(slide: CarouselSlide) {
+  return `Slide ${slide.slideNumber}\n\nHeadline:\n${slide.headline}\n\nBody:\n${slide.body}\n\nVisual Suggestion:\n${slide.visualSuggestion}`;
+}
+
 export function CarouselCard({
   slides,
 }: CarouselCardProps) {
-  const copyCarousel = async () => {
-    await navigator.clipboard.writeText(
-      JSON.stringify(slides, null, 2)
+  const copyCarousel = () =>
+    copyToClipboard(
+      slides.map(formatSlide).join("\n\n------------------------\n\n"),
+      "Carousel copied"
     );
-
-    toast.success("Carousel copied");
-  };
 
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">

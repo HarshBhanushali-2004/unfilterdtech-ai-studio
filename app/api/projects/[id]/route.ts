@@ -46,12 +46,35 @@ export async function PATCH(
 
     const body = await request.json();
 
+    const name = body.name?.trim();
+
+    if (!name) {
+      return NextResponse.json(
+        { error: "Project name is required" },
+        { status: 400 }
+      );
+    }
+
+    const existing = await prisma.project.findFirst({
+      where: {
+        name: { equals: name, mode: "insensitive" },
+        NOT: { id },
+      },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: `A project named "${name}" already exists.` },
+        { status: 409 }
+      );
+    }
+
     const project = await prisma.project.update({
       where: {
         id,
       },
       data: {
-        name: body.name,
+        name,
         description: body.description,
         color: body.color,
         brandKitId: body.brandKitId || null,

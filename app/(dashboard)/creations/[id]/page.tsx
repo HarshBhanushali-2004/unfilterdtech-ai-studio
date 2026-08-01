@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { ArrowLeft, Copy, Pencil } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
-import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/creations/copy-button";
+import { CreationActions } from "@/components/creations/creation-actions";
 import { AIEditorPanel } from "@/components/creations/ai-editor-panel";
+import { PostCard } from "@/components/creations/post-card";
 import { HashtagsCard } from "@/components/creations/hashtags-card";
 import { CarouselCard } from "@/components/creations/carousel-card";
 import { StoryCard } from "@/components/creations/story-card";
@@ -31,10 +33,18 @@ export default async function CreationPage({
     notFound();
   }
 
+  const redirectTo = creation.project
+    ? `/projects/${creation.project.id}`
+    : "/projects";
+
+  const hashtags = Array.isArray(creation.hashtags)
+    ? (creation.hashtags as string[])
+    : [];
+
   return (
     <div className="space-y-8">
       <Link
-        href={creation.project ? `/projects/${creation.project.id}` : "/projects"}
+        href={redirectTo}
         className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -58,16 +68,21 @@ export default async function CreationPage({
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <Button variant="outline">
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
+        <div className="flex flex-wrap gap-3">
+          <CreationActions
+            creation={{
+              id: creation.id,
+              caption: creation.caption,
+              prompt: creation.prompt,
+            }}
+            redirectTo={redirectTo}
+          />
 
-          <Button>
-            <Copy className="mr-2 h-4 w-4" />
-            Copy Caption
-          </Button>
+          <CopyButton
+            text={creation.caption}
+            label="Copy Caption"
+            successMessage="Caption copied"
+          />
         </div>
       </div>
 
@@ -90,10 +105,13 @@ export default async function CreationPage({
                 Prompt Used
               </h2>
 
-              <Button variant="outline" size="sm">
-                <Copy className="mr-2 h-4 w-4" />
-                Copy
-              </Button>
+              <CopyButton
+                text={creation.prompt || ""}
+                label="Copy"
+                successMessage="Prompt copied"
+                variant="outline"
+                size="sm"
+              />
             </div>
 
             <div className="rounded-lg bg-muted/40 p-4">
@@ -114,12 +132,16 @@ export default async function CreationPage({
 
       {/* Generated Content Preview */}
       <div className="grid gap-6">
-        {Array.isArray(creation.hashtags) && creation.hashtags.length > 0 && (
-          <HashtagsCard hashtags={creation.hashtags as string[]} />
+        <PostCard caption={creation.caption} hashtags={hashtags} />
+
+        {hashtags.length > 0 && (
+          <HashtagsCard hashtags={hashtags} />
         )}
 
         {Array.isArray(creation.carousel) && creation.carousel.length > 0 && (
-          <CarouselCard slides={creation.carousel as unknown as CarouselSlide[]} />
+          <CarouselCard
+            slides={creation.carousel as unknown as CarouselSlide[]}
+          />
         )}
 
         {Array.isArray(creation.story) && creation.story.length > 0 && (

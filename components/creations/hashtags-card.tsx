@@ -1,9 +1,9 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 
 type HashtagsCardProps = {
   hashtags: string[];
@@ -12,13 +12,11 @@ type HashtagsCardProps = {
 export function HashtagsCard({
   hashtags,
 }: HashtagsCardProps) {
-  const copyHashtags = async () => {
-    await navigator.clipboard.writeText(
-      hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")
+  const copyHashtags = () =>
+    copyToClipboard(
+      hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" "),
+      "Hashtags copied"
     );
-
-    toast.success("Hashtags copied");
-  };
 
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">

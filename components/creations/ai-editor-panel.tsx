@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Sparkles, Send, User } from "lucide-react";
+import { Sparkles, Send, User } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -125,7 +125,7 @@ export function AIEditorPanel({
 }
   
   return (
-    <div className="sticky top-24 flex h-[calc(100vh-130px)] min-h-[760px] flex-col rounded-2xl border">
+    <div className="flex min-h-[560px] flex-col rounded-2xl border lg:sticky lg:top-24 lg:h-[calc(100vh-130px)]">
       {/* Header */}
       <div className="border-b p-5">
         <div className="flex items-center gap-2">
@@ -216,31 +216,29 @@ export function AIEditorPanel({
       </div>
 
       {/* Messages */}
-    <ScrollArea className="flex-1">
+    <ScrollArea className="min-h-0 flex-1">
     <div className="space-y-6 p-5">
         <div className="flex justify-end gap-3">
-            <div className="max-w-[92%] rounded-2xl border px-4 py-3">
-                <div className="max-w-[92%] rounded-2xl border px-5 py-4">
-                  <div className="rounded-xl bg-muted p-4">
-                    <p className="whitespace-pre-wrap text-sm leading-7">
-                      {loading
-                        ? "Thinking..."
-                        : response || "Ask AI to rewrite the content."}
-                    </p>
-                  </div>
-                  {response && (
-                    <div className="mt-4 flex justify-end">
-                      <Button onClick={acceptRewrite}>
-                        ✅ Accept Rewrite
-                      </Button>
-                    </div>
-                  )}
+            <div className="max-w-[92%] rounded-2xl border px-5 py-4">
+              <div className="rounded-xl bg-muted p-4">
+                <p className="whitespace-pre-wrap text-sm leading-7">
+                  {loading
+                    ? "Thinking..."
+                    : response || "Ask AI to rewrite the content."}
+                </p>
+              </div>
+              {response && (
+                <div className="mt-4 flex justify-end">
+                  <Button onClick={acceptRewrite}>
+                    ✅ Accept Rewrite
+                  </Button>
                 </div>
+              )}
             </div>
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <User className="h-4 w-4" />
-        </div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <User className="h-4 w-4" />
+            </div>
         </div>
     </div>
     </ScrollArea>

@@ -1,9 +1,9 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export type ReelScene = {
   sceneNumber: number;
@@ -21,16 +21,21 @@ type ReelCardProps = {
   reel: Reel;
 };
 
+function formatReel(reel: Reel) {
+  const scenesText = reel.scenes
+    .map(
+      (scene) =>
+        `Scene ${scene.sceneNumber}\n\nNarration:\n${scene.narration}\n\nVisual:\n${scene.visual}`
+    )
+    .join("\n\n------------------------\n\n");
+
+  return `Hook\n\n${reel.hook}\n\nScript\n\n${reel.script}\n\n------------------------\n\n${scenesText}`;
+}
+
 export function ReelCard({
   reel,
 }: ReelCardProps) {
-  const copyReel = async () => {
-    await navigator.clipboard.writeText(
-      JSON.stringify(reel, null, 2)
-    );
-
-    toast.success("Reel copied");
-  };
+  const copyReel = () => copyToClipboard(formatReel(reel), "Reel copied");
 
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">

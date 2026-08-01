@@ -1,9 +1,9 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export type StoryFrame = {
   frameNumber: number;
@@ -15,16 +15,18 @@ type StoryCardProps = {
   stories: StoryFrame[];
 };
 
+function formatStory(story: StoryFrame) {
+  return `Story ${story.frameNumber}\n\nText:\n${story.text}\n\nVisual Suggestion:\n${story.visualSuggestion}`;
+}
+
 export function StoryCard({
   stories,
 }: StoryCardProps) {
-  const copyStories = async () => {
-    await navigator.clipboard.writeText(
-      JSON.stringify(stories, null, 2)
+  const copyStories = () =>
+    copyToClipboard(
+      stories.map(formatStory).join("\n\n------------------------\n\n"),
+      "Stories copied"
     );
-
-    toast.success("Stories copied");
-  };
 
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">
