@@ -1,7 +1,5 @@
 "use client"
 
-import { Sparkles } from "lucide-react"
-
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -34,27 +32,7 @@ export function GenerationSettings({
         : creativityLabels[1]
 
   return (
-    <section
-      aria-labelledby="settings-heading"
-      className="rounded-xl bg-muted/55 p-4"
-    >
-      <div className="mb-4 flex items-center gap-2">
-        <span className="grid size-7 place-items-center rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-300">
-          <Sparkles className="size-3.5" />
-        </span>
-
-        <div>
-          <h2 id="settings-heading" className="text-sm font-semibold">
-            Generation settings
-          </h2>
-
-          <p className="text-xs text-muted-foreground">
-            Fine-tune the creative direction.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
+    <div className="grid gap-5 sm:grid-cols-2">
 
         {/* Tone */}
         <div>
@@ -149,7 +127,5 @@ export function GenerationSettings({
         </div>
 
       </div>
-
-    </section>
   )
 }

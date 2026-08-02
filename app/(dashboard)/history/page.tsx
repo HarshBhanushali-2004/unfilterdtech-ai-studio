@@ -13,7 +13,15 @@ export default async function HistoryPage() {
   const [creations, projects] = await Promise.all([
     prisma.creation.findMany({
       orderBy: { createdAt: "desc" },
-      include: { project: { select: { id: true, name: true } } },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            brandKit: { select: { id: true, name: true } },
+          },
+        },
+      },
     }),
     prisma.project.findMany({
       select: { id: true, name: true },

@@ -30,13 +30,9 @@ export function CarouselCard({
     );
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
-          Carousel
-        </h2>
-
-        <Button variant="outline" onClick={copyCarousel}>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={copyCarousel}>
           <Copy className="mr-2 h-4 w-4" />
           Copy Carousel
         </Button>

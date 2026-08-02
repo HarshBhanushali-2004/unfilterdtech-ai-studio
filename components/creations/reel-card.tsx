@@ -38,13 +38,9 @@ export function ReelCard({
   const copyReel = () => copyToClipboard(formatReel(reel), "Reel copied");
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
-          Reel
-        </h2>
-
-        <Button variant="outline" onClick={copyReel}>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={copyReel}>
           <Copy className="mr-2 h-4 w-4" />
           Copy Reel
         </Button>

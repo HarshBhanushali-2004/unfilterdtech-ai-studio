@@ -2,16 +2,16 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { AlertCircle, Sparkles } from "lucide-react"
+import { AlertCircle, Loader2, Sparkles } from "lucide-react"
 
 import { ContentTypeSelector } from "@/components/ai-studio/content-type-selector"
-import { GenerationProgress } from "@/components/ai-studio/generation-progress"
+import { OutputSkeleton } from "@/components/ai-studio/output-skeleton"
 import { GenerationSettings } from "@/components/ai-studio/generation-settings"
 import { OutputPanel } from "@/components/ai-studio/output-panel"
 import { SourceSelector } from "@/components/ai-studio/source-selector"
+import { CollapsibleSection } from "@/components/dashboard/collapsible-section"
 import type {
   ContentType,
-  OutputTab,
   SourceType,
 } from "@/components/ai-studio/types"
 import { Button } from "@/components/ui/button"
@@ -23,13 +23,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { GeneratedInstagramContent } from "@/lib/ai"
-
-const outputTabByContentType: Record<ContentType, OutputTab> = {
-  post: "caption",
-  carousel: "carousel",
-  story: "story",
-  reel: "reel",
-}
 
 const apiContentTypeByContentType = {
   post: "instagram_post",
@@ -230,18 +223,29 @@ export function StudioWorkspace() {
               }}
             />
 
-            <GenerationSettings
-              tone={tone}
-              creativity={creativity}
-              onToneChange={(value) => {
-                setTone(value)
-                clearGeneratedContent()
-              }}
-              onCreativityChange={(value) => {
-                setCreativity(value)
-                clearGeneratedContent()
-              }}
-            />
+            <CollapsibleSection
+              title="Advanced Settings"
+              description="Fine-tune tone and creativity"
+              icon={
+                <span className="grid size-7 place-items-center rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-300">
+                  <Sparkles className="size-3.5" />
+                </span>
+              }
+              className="rounded-xl bg-muted/55 p-4"
+            >
+              <GenerationSettings
+                tone={tone}
+                creativity={creativity}
+                onToneChange={(value) => {
+                  setTone(value)
+                  clearGeneratedContent()
+                }}
+                onCreativityChange={(value) => {
+                  setCreativity(value)
+                  clearGeneratedContent()
+                }}
+              />
+            </CollapsibleSection>
 
             <Button
               className="w-full bg-violet-600 text-white hover:bg-violet-700"
@@ -251,8 +255,8 @@ export function StudioWorkspace() {
             >
               {isLoading ? (
                 <>
-                  <Sparkles className="animate-pulse mr-2 h-4 w-4" />
-                  Generating content...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating your content...
                 </>
               ) : (
                 <>
@@ -269,19 +273,24 @@ export function StudioWorkspace() {
 
         <div className="space-y-6">
           {isLoading ? (
-            <GenerationProgress progress={55} />
+            <OutputSkeleton />
           ) : error ? (
-            <GenerationError message={error} />
+            <GenerationError message={error} onRetry={generate} />
           ) : (
             <OutputPanel
               key={`${contentType}-${generatedContent ? "generated" : "empty"}`}
               content={generatedContent}
-              defaultTab={outputTabByContentType[contentType]}
               projectId={selectedProjectId}
               prompt={sourceValue}
               contentType={contentType}
               tone={tone}
               creativity={creativity}
+              onRegenerate={generate}
+              onClear={clearGeneratedContent}
+              onExampleSelect={(topic) => {
+                setSourceType("topic")
+                handleSourceValueChange("topic", topic)
+              }}
             />
           )}
         </div>
@@ -292,24 +301,34 @@ export function StudioWorkspace() {
 
 function GenerationError({
   message,
+  onRetry,
 }: {
   message: string
+  onRetry?: () => void
 }) {
   return (
     <Card className="border-destructive/30">
       <CardHeader>
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertCircle className="size-5" />
-          </span>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
+              <AlertCircle className="size-5" />
+            </span>
 
-          <div>
-            <CardTitle>Generation unavailable</CardTitle>
+            <div>
+              <CardTitle>Generation unavailable</CardTitle>
 
-            <CardDescription className="mt-1">
-              {message}
-            </CardDescription>
+              <CardDescription className="mt-1">
+                {message}
+              </CardDescription>
+            </div>
           </div>
+
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0">
+              Try again
+            </Button>
+          )}
         </div>
       </CardHeader>
     </Card>

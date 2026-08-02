@@ -3,11 +3,23 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderOpen } from "lucide-react";
+import { Clock3, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 
 import { ProjectActions } from "./project-actions";
 import { EditProjectDialog } from "./edit-project-dialog";
+import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
+import { formatDate } from "@/lib/format-date";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 
 export interface ProjectCardProps {
@@ -22,6 +34,7 @@ export interface ProjectCardProps {
   } | null;
 
   creations?: number;
+  updatedAt?: string;
 }
 
 export function ProjectCard({
@@ -31,14 +44,17 @@ export function ProjectCard({
   color,
   brandKit,
   creations = 0,
+  updatedAt,
 }: ProjectCardProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function deleteProject() {
-    if (!confirm("Delete this project?")) return;
-
     try {
+      setDeleting(true);
+
       const res = await fetch(`/api/projects/${id}`, {
         method: "DELETE",
       });
@@ -58,6 +74,9 @@ export function ProjectCard({
           ? error.message
           : "Failed to delete project"
       );
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
     }
   }
   return (
@@ -66,7 +85,7 @@ export function ProjectCard({
       <div className="absolute right-6 top-6 z-10">
         <ProjectActions
           onEdit={() => setEditOpen(true)}
-          onDelete={deleteProject}
+          onDelete={() => setDeleteOpen(true)}
         />
       </div>
 
@@ -85,8 +104,8 @@ export function ProjectCard({
             {description || "No description"}
           </p>
           {brandKit && (
-            <div className="mt-3 inline-flex items-center rounded-full border px-2 py-1 text-xs">
-              🏷 {brandKit.name}
+            <div className="mt-3">
+              <BrandKitBadge name={brandKit.name} />
             </div>
           )}
         </div>
@@ -99,6 +118,13 @@ export function ProjectCard({
 
           <span className="text-xs">Open →</span>
         </div>
+
+        {updatedAt && (
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock3 className="h-3.5 w-3.5" />
+            <span>Updated {formatDate(updatedAt)}</span>
+          </div>
+        )}
       </Link>
     </div>
       <EditProjectDialog
@@ -113,6 +139,28 @@ export function ProjectCard({
         }}
         onUpdated={() => router.refresh()}
       />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. Creations in this project will be kept
+              but unlinked from it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={deleteProject}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

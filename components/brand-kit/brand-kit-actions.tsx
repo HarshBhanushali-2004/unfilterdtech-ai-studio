@@ -26,6 +26,7 @@ export function BrandKitActions({
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Brand Kit actions"
         >
           <MoreHorizontal className="h-4 w-4" />
         </Button>

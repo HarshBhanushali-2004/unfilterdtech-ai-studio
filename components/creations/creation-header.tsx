@@ -3,6 +3,7 @@
 import { Copy, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { formatDate } from "@/lib/format-date";
 
 type CreationHeaderProps = {
   title: string;
@@ -36,7 +37,7 @@ export function CreationHeader({
           )}
 
           <span>
-            {createdAt.toLocaleDateString()}
+            {formatDate(createdAt)}
           </span>
         </div>
       </div>

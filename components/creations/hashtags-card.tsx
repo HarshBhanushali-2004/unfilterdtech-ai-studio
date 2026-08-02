@@ -19,13 +19,9 @@ export function HashtagsCard({
     );
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
-          Hashtags
-        </h2>
-
-        <Button variant="outline" onClick={copyHashtags}>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={copyHashtags}>
           <Copy className="mr-2 h-4 w-4" />
           Copy Hashtags
         </Button>

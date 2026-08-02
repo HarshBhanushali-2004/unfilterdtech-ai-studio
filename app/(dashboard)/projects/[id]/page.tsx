@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { EditProjectButton } from "@/components/projects/edit-project-button";
+import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
+import { formatDate } from "@/lib/format-date";
 
 export default async function ProjectPage({
   params,
@@ -71,9 +73,15 @@ export default async function ProjectPage({
           />
 
           <div>
-            <h1 className="text-4xl font-bold tracking-tight">
-              {project.name}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-4xl font-bold tracking-tight">
+                {project.name}
+              </h1>
+
+              {project.brandKit && (
+                <BrandKitBadge name={project.brandKit.name} />
+              )}
+            </div>
 
             <p className="text-muted-foreground">
               {project.description || "No description"}
@@ -188,9 +196,15 @@ export default async function ProjectPage({
               >
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">
-                      {creation.title}
-                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold">
+                        {creation.title}
+                      </h3>
+
+                      {project.brandKit && (
+                        <BrandKitBadge name={project.brandKit.name} />
+                      )}
+                    </div>
 
                     <p className="text-sm text-muted-foreground">
                       {creation.contentType}
@@ -201,7 +215,7 @@ export default async function ProjectPage({
                     </p>
 
                     <p className="text-xs text-muted-foreground">
-                      {creation.createdAt.toLocaleDateString()}
+                      {formatDate(creation.createdAt)}
                     </p>
                   </div>
 

@@ -29,13 +29,9 @@ export function StoryCard({
     );
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
-          Stories
-        </h2>
-
-        <Button variant="outline" onClick={copyStories}>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={copyStories}>
           <Copy className="mr-2 h-4 w-4" />
           Copy Stories
         </Button>

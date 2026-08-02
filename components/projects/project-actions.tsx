@@ -26,6 +26,7 @@ export function ProjectActions({
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Project actions"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
