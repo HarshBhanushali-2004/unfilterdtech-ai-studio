@@ -69,7 +69,7 @@ export function GeneratedContentSections({
           </TabsList>
         </div>
 
-        <div className="p-6">
+        <div className="p-5 md:p-6">
           <TabsContent value="caption" className="mt-0">
             <CaptionCard caption={caption} />
           </TabsContent>

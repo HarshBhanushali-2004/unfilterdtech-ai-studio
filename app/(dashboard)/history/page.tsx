@@ -52,7 +52,7 @@ export default async function HistoryPage() {
         />
       ) : (
         <HistoryPageClient
-          creations={creations.map((creation) => ({
+            creations={creations.map((creation: (typeof creations)[number]) => ({            
             id: creation.id,
             title: creation.title,
             contentType: creation.contentType,

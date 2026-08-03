@@ -60,7 +60,7 @@ export function CollapsibleSection({
       </button>
 
       {open && (
-        <div id={contentId} className="mt-4">
+        <div id={contentId} className="mt-6">
           {children}
         </div>
       )}

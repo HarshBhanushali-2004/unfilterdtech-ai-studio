@@ -31,6 +31,9 @@ type OutputPanelProps = {
   content: GeneratedInstagramContent | null
 
   projectId?: string | null
+  researchId?: string | null
+  plannerId?: string | null
+  visualPromptId?: string | null
   prompt?: string
   contentType?: string
   tone?: string
@@ -44,6 +47,9 @@ type OutputPanelProps = {
 export function OutputPanel({
   content,
   projectId,
+  researchId,
+  plannerId,
+  visualPromptId,
   prompt,
   contentType,
   tone,
@@ -81,6 +87,9 @@ export function OutputPanel({
         },
         body: JSON.stringify({
           projectId: project,
+          researchId: researchId ?? undefined,
+          plannerId: plannerId ?? undefined,
+          visualPromptId: visualPromptId ?? undefined,
           title: title.trim() || defaultTitle,
           prompt,
           contentType,

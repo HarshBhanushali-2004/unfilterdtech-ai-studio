@@ -33,6 +33,9 @@ const apiContentTypeByContentType = {
 
 type GenerateApiResponse = {
   data?: GeneratedInstagramContent
+  researchId?: string
+  plannerId?: string
+  visualPromptId?: string
   error?: string
 }
 
@@ -62,6 +65,9 @@ export function StudioWorkspace() {
 
   const [generatedContent, setGeneratedContent] =
     React.useState<GeneratedInstagramContent | null>(null)
+  const [researchId, setResearchId] = React.useState<string | null>(null)
+  const [plannerId, setPlannerId] = React.useState<string | null>(null)
+  const [visualPromptId, setVisualPromptId] = React.useState<string | null>(null)
 
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -146,6 +152,9 @@ export function StudioWorkspace() {
       }
 
       setGeneratedContent(payload.data)
+      setResearchId(payload.researchId ?? null)
+      setPlannerId(payload.plannerId ?? null)
+      setVisualPromptId(payload.visualPromptId ?? null)
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -159,6 +168,9 @@ export function StudioWorkspace() {
 
   const clearGeneratedContent = () => {
     setGeneratedContent(null)
+    setResearchId(null)
+    setPlannerId(null)
+    setVisualPromptId(null)
     setError(null)
   }
 
@@ -281,6 +293,9 @@ export function StudioWorkspace() {
               key={`${contentType}-${generatedContent ? "generated" : "empty"}`}
               content={generatedContent}
               projectId={selectedProjectId}
+              researchId={researchId}
+              plannerId={plannerId}
+              visualPromptId={visualPromptId}
               prompt={sourceValue}
               contentType={contentType}
               tone={tone}

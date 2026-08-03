@@ -44,4 +44,10 @@ export type GenerateContentInput = {
   tone: string
   creativity: number
   projectId?: string
+  /** Reuse a previously generated research brief instead of the topic cache lookup. */
+  researchId?: string
+  /** Reuse a previously generated strategic plan instead of the planner cache lookup. */
+  plannerId?: string
+  /** Reuse a previously generated visual prompt set instead of the visual prompt cache lookup. */
+  visualPromptId?: string
 }

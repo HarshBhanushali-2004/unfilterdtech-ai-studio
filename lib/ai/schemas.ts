@@ -44,4 +44,7 @@ export const generateContentInputSchema: z.ZodType<GenerateContentInput> = z.obj
   tone: z.string().trim().min(1).max(80),
   creativity: z.number().int().min(0).max(100),
   projectId: z.string().trim().min(1).optional(),
+  researchId: z.string().trim().min(1).optional(),
+  plannerId: z.string().trim().min(1).optional(),
+  visualPromptId: z.string().trim().min(1).optional(),
 })

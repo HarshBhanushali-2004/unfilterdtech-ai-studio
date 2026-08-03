@@ -1,15 +1,29 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
+import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { CopyButton } from "@/components/creations/copy-button";
 import { CreationActions } from "@/components/creations/creation-actions";
 import { AIEditorPanel } from "@/components/creations/ai-editor-panel";
 import { GeneratedContentSections } from "@/components/creations/generated-content-sections";
+import { ResearchPanel } from "@/components/creations/research-panel";
+import { PlannerPanel } from "@/components/creations/planner-panel";
+import { KeywordPanel } from "@/components/creations/keyword-panel";
+import { QualityScorePanel } from "@/components/creations/quality-score-panel";
+import { SuggestionsPanel } from "@/components/creations/suggestions-panel";
+import { VisualAssetsPanel } from "@/components/creations/visual-assets-panel";
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
 import { formatDate } from "@/lib/format-date";
+import {
+  researchObjectSchema,
+  plannerObjectSchema,
+  qualityScoreSchema,
+  suggestionSchema,
+  visualPromptObjectSchema,
+} from "@/lib/ai";
 import type { CarouselSlide, StoryFrame, ReelContent } from "@/lib/ai/types";
 
 export default async function CreationPage({
@@ -34,6 +48,9 @@ export default async function CreationPage({
           },
         },
       },
+      research: true,
+      planner: true,
+      visualPrompt: true,
     },
   });
 
@@ -49,7 +66,28 @@ export default async function CreationPage({
     ? (creation.hashtags as string[])
     : [];
 
+  const research = creation.research
+    ? researchObjectSchema.safeParse(creation.research.data)
+    : null;
+
+  const planner = creation.planner
+    ? plannerObjectSchema.safeParse(creation.planner.data)
+    : null;
+
+  const qualityScore = creation.qualityScore
+    ? qualityScoreSchema.safeParse(creation.qualityScore)
+    : null;
+
+  const suggestions = creation.suggestions
+    ? z.array(suggestionSchema).safeParse(creation.suggestions)
+    : null;
+
+  const visualPrompt = creation.visualPrompt
+    ? visualPromptObjectSchema.safeParse(creation.visualPrompt.data)
+    : null;
+
   return (
+    <>
     <div className="space-y-8">
       <Link
         href={redirectTo}
@@ -98,11 +136,11 @@ export default async function CreationPage({
         />
       </div>
 
-      <div className="grid gap-8 xl:grid-cols-12">
+      <div className="grid gap-8 xl:grid-cols-12 xl:gap-10">
         {/* Left Column */}
-        <div className="space-y-6 xl:col-span-5">
-          <div className="rounded-2xl border p-6">
-            <h2 className="mb-4 text-lg font-semibold">
+        <div className="space-y-8 pb-10 xl:col-span-5">
+          <div className="rounded-2xl border p-5 md:p-6">
+            <h2 className="mb-5 text-lg font-semibold">
               Caption
             </h2>
 
@@ -111,9 +149,9 @@ export default async function CreationPage({
             </p>
 
           </div>
-          <div className="rounded-2xl border p-6">
+          <div className="rounded-2xl border p-5 md:p-6">
             <CollapsibleSection title="Prompt Used" defaultOpen={false}>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex justify-end">
                   <CopyButton
                     text={creation.prompt || ""}
@@ -124,7 +162,7 @@ export default async function CreationPage({
                   />
                 </div>
 
-                <div className="rounded-lg bg-muted/40 p-4">
+                <div className="rounded-lg bg-muted/40 p-5">
                   <pre className="whitespace-pre-wrap break-words text-sm leading-6">
                     {creation.prompt || "No prompt available."}
                   </pre>
@@ -132,6 +170,24 @@ export default async function CreationPage({
               </div>
             </CollapsibleSection>
           </div>
+
+          {research?.success && <ResearchPanel research={research.data} />}
+          {planner?.success && <PlannerPanel planner={planner.data} />}
+          {planner?.success && (
+            <KeywordPanel keywords={planner.data.keywordIntelligence} />
+          )}
+          {qualityScore?.success && (
+            <QualityScorePanel scores={qualityScore.data} />
+          )}
+          {suggestions?.success && (
+            <SuggestionsPanel suggestions={suggestions.data} />
+          )}
+          {visualPrompt?.success && (
+            <VisualAssetsPanel
+              visualPromptId={creation.visualPrompt!.id}
+              visualPrompt={visualPrompt.data}
+            />
+          )}
         </div>
 
         <div className="xl:col-span-7">
@@ -141,8 +197,10 @@ export default async function CreationPage({
           />
         </div>
       </div>
+    </div>
 
-      {/* Generated Content Preview */}
+    {/* Generated Content Preview */}
+    <div className="mt-10">
       <GeneratedContentSections
         caption={creation.caption}
         hashtags={hashtags}
@@ -159,5 +217,6 @@ export default async function CreationPage({
         reel={creation.reel ? (creation.reel as unknown as ReelContent) : null}
       />
     </div>
+    </>
   );
 }

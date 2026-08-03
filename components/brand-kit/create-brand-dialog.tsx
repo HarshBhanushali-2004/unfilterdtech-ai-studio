@@ -35,6 +35,22 @@ const initialValues: BrandKitFormValues = {
   ctaStyle: "",
 
   logoUrl: "",
+  secondaryLogoUrl: "",
+  whiteLogoUrl: "",
+  darkLogoUrl: "",
+  watermarkLogoUrl: "",
+  watermarkEnabled: false,
+
+  logoPosition: "bottom-right",
+  safeMargin: "5",
+
+  headingFont: "Inter",
+  bodyFont: "Inter",
+
+  overlayOpacity: "45",
+  textStyle: "bold",
+  layoutStyle: "bottom-aligned",
+  iconStyle: "outline",
 
   primaryColor: "#7C3AED",
   secondaryColor: "#2563EB",
@@ -62,7 +78,7 @@ export function CreateBrandDialog({
 
   function updateField(
     field: keyof BrandKitFormValues,
-    value: string
+    value: string | boolean
   ) {
     setValues((current) => ({
       ...current,

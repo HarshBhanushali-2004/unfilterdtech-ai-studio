@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import type { BrandKit } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,26 +21,7 @@ import { EditBrandDialog } from "@/components/brand-kit/edit-brand-dialog";
 import { deleteBrandKit } from "@/lib/brand-kit/actions";
 
 type BrandKitDetailActionsProps = {
-  brand: {
-    id: string;
-    name: string;
-    website: string | null;
-    industry: string | null;
-    description: string | null;
-    targetAudience: string | null;
-    language: string | null;
-    tone: string | null;
-    writingStyle: string | null;
-    emojiStyle: string | null;
-    ctaStyle: string | null;
-    logoUrl: string | null;
-    primaryColor: string | null;
-    secondaryColor: string | null;
-    accentColor: string | null;
-    keywords: string[];
-    hashtags: string[];
-    avoidWords: string[];
-  };
+  brand: BrandKit;
 };
 
 const actionButtonClass = "h-9 gap-2 rounded-lg px-3.5";

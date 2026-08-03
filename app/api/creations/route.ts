@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { ContentType } from "@prisma/client";
+import { ContentType, type Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import { AIServiceError, generateEvaluation } from "@/lib/ai";
+import { loadBrandContext } from "@/lib/brand-kit/load-context";
 import { prisma } from "@/lib/prisma";
 import { formatZodError } from "@/lib/validation";
 
@@ -21,7 +23,40 @@ const createCreationSchema = z.object({
       contentTypeMap
     ).join(", ")}.`,
   }),
+  researchId: z.string().trim().min(1).optional(),
+  plannerId: z.string().trim().min(1).optional(),
+  visualPromptId: z.string().trim().min(1).optional(),
 });
+
+/**
+ * AI Quality Score + AI Suggestions — runs once, at save time, against the
+ * finished content. Best-effort: a failure here (e.g. Gemini unavailable)
+ * must never block saving the creation, matching the existing Brand Kit
+ * context resilience pattern.
+ */
+async function evaluateCreation(
+  caption: string,
+  hashtags: unknown,
+  projectId: string | null
+): Promise<{ qualityScore: Prisma.InputJsonValue | undefined; suggestions: Prisma.InputJsonValue | undefined }> {
+  try {
+    const { context: brandContext } = await loadBrandContext(projectId);
+    const normalizedHashtags = Array.isArray(hashtags) ? (hashtags as string[]) : [];
+
+    const evaluation = await generateEvaluation(
+      { caption, hashtags: normalizedHashtags },
+      brandContext
+    );
+
+    return {
+      qualityScore: evaluation.scores as unknown as Prisma.InputJsonValue,
+      suggestions: evaluation.suggestions as unknown as Prisma.InputJsonValue,
+    };
+  } catch (error) {
+    console.error("Failed to evaluate creation:", error instanceof AIServiceError ? error.message : error);
+    return { qualityScore: undefined, suggestions: undefined };
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -37,10 +72,20 @@ export async function POST(request: Request) {
     }
 
     const contentType = contentTypeMap[validation.data.contentType];
+    const projectId: string | null = body.projectId ?? null;
+
+    const { qualityScore, suggestions } = await evaluateCreation(
+      validation.data.caption,
+      body.hashtags,
+      projectId
+    );
 
     const creation = await prisma.creation.create({
       data: {
-        projectId: body.projectId ?? null,
+        projectId,
+        researchId: validation.data.researchId ?? null,
+        plannerId: validation.data.plannerId ?? null,
+        visualPromptId: validation.data.visualPromptId ?? null,
 
         title: validation.data.title,
         prompt: validation.data.prompt,
@@ -56,6 +101,9 @@ export async function POST(request: Request) {
         carousel: body.carousel,
         story: body.story,
         reel: body.reel,
+
+        qualityScore,
+        suggestions,
 
         model: body.model ?? "Gemini",
       },

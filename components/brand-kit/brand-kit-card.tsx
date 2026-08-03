@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Globe, Palette } from "lucide-react";
 import { useState } from "react";
+import type { BrandKit } from "@prisma/client";
 
 import { BrandKitActions } from "./brand-kit-actions";
 import { EditBrandDialog } from "./edit-brand-dialog";
@@ -10,31 +11,7 @@ import { EditBrandDialog } from "./edit-brand-dialog";
 import { deleteBrandKit } from "@/lib/brand-kit/actions";
 
 type BrandKitCardProps = {
-  brand: {
-    id: string;
-    name: string;
-    industry: string | null;
-    website: string | null;
-
-    description: string | null;
-    targetAudience: string | null;
-    language: string | null;
-
-    tone: string | null;
-    writingStyle: string | null;
-    emojiStyle: string | null;
-    ctaStyle: string | null;
-
-    logoUrl: string | null;
-
-    primaryColor: string | null;
-    secondaryColor: string | null;
-    accentColor: string | null;
-
-    keywords: string[];
-    hashtags: string[];
-    avoidWords: string[];
-  };
+  brand: BrandKit;
 
   onUpdated: () => void;
 };

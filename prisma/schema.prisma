@@ -13,79 +13,268 @@ enum ContentType {
   REEL
 }
 
+enum ImageGenerationStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
 model Project {
-  id          String      @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  color       String?     @default("#3B82F6")
+  color       String? @default("#3B82F6")
 
-  brandKitId  String?
-  brandKit    BrandKit?   @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
+  brandKitId String?
+  brandKit   BrandKit? @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
 
-  creations   Creation[]
+  creations Creation[]
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([brandKitId])
 }
 
 model Creation {
-  id              String      @id @default(cuid())
+  id String @id @default(cuid())
 
-  projectId       String?
-  project         Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
-  title           String
-  prompt          String      @db.Text
+  researchId String?
+  research   Research? @relation(fields: [researchId], references: [id], onDelete: SetNull)
 
-  contentType     ContentType
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
 
-  tone            String?
-  creativity      Int?
+  visualPromptId String?
+  visualPrompt   VisualPrompt? @relation(fields: [visualPromptId], references: [id], onDelete: SetNull)
 
-  caption         String      @db.Text
-  hashtags        Json?
-  carousel        Json?
-  story           Json?
-  reel            Json?
+  title  String
+  prompt String @db.Text
 
-  model           String?
+  contentType ContentType
 
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  tone       String?
+  creativity Int?
+
+  caption  String @db.Text
+  hashtags Json?
+  carousel Json?
+  story    Json?
+  reel     Json?
+
+  /// AI Quality Score evaluation — see `qualityScoreSchema` in `lib/ai/evaluation-schemas.ts`.
+  qualityScore Json?
+  /// AI Suggestions from the same evaluation pass — display-only, never auto-applied.
+  suggestions  Json?
+
+  model String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([projectId])
+  @@index([researchId])
+  @@index([plannerId])
+  @@index([visualPromptId])
   @@index([createdAt])
 }
+
+/// A cached, structured knowledge brief for a topic — the output of the
+/// Research Engine. Independent of Brand Kit, tone, and content type so it
+/// can be reused across every generation and content format for the same
+/// topic. `data` holds the full Research Object shape defined by
+/// `researchObjectSchema` in `lib/ai/research-schemas.ts` (the schema, not
+/// this column, is the structural source of truth).
+model Research {
+  id String @id @default(cuid())
+
+  topicKey String @unique
+  topic    String @db.Text
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  planners  Planner[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A cached strategic content plan — the output of the AI Planner, which runs
+/// after Research and before generation. Unlike Research, this IS brand- and
+/// tone-sensitive (audience framing, hook/CTA strategy, keyword intelligence),
+/// so its cache key includes Research + Brand Kit + tone + creativity.
+/// `data` holds the full Planner Object shape defined by `plannerObjectSchema`
+/// in `lib/ai/planner-schemas.ts`.
+model Planner {
+  id String @id @default(cuid())
+
+  planKey String @unique
+
+  researchId String?
+  research   Research? @relation(fields: [researchId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+  tone       String?
+  creativity Int?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations     Creation[]
+  visualPrompts VisualPrompt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([researchId])
+}
+
+/// A cached set of production-ready AI image/video prompts — the output of
+/// the Visual Prompt Engine, which runs after the Planner and independently
+/// of the Instagram Content Generator (its output is never mixed into the
+/// caption/hashtag prompt). Brand-sensitive like the Planner, so its cache
+/// key includes the Planner + Brand Kit. `data` holds the full
+/// VisualPromptObject shape defined by `visualPromptObjectSchema` in
+/// `lib/ai/visual-prompt-schemas.ts`.
+model VisualPrompt {
+  id String @id @default(cuid())
+
+  promptKey String @unique
+
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  images    GeneratedImage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plannerId])
+}
+
+/// A generated image for one prompt "slot" within a VisualPrompt (e.g.
+/// `post.mainImage`, `carousel.slide.2`, `reel.thumbnail`) — the output of
+/// the AI Image Generation system (Image Provider Manager). One row per
+/// (visualPromptId, slot); regenerating updates the same row rather than
+/// appending, so every slot always has at most one "current" image, cached
+/// and reused across every Creation that shares the same VisualPrompt.
+/// Images are stored as data URLs directly in `imageUrl` — this project has
+/// no object storage (S3/Supabase Storage) wired in, so this is the
+/// pragmatic choice for a single-tenant, personal-use app; revisit if that
+/// changes.
+model GeneratedImage {
+  id String @id @default(cuid())
+
+  visualPromptId String
+  visualPrompt   VisualPrompt @relation(fields: [visualPromptId], references: [id], onDelete: Cascade)
+
+  /// Stable identifier for which prompt this image belongs to within the
+  /// VisualPromptObject shape — see `lib/image-generation/slot-resolver.ts`.
+  slot String
+
+  /// Which Image Provider produced this image (e.g. "gemini"). Never assume
+  /// a single provider — see `lib/ai/image-providers/`.
+  provider String
+
+  status ImageGenerationStatus @default(PENDING)
+
+  /// Data URL (`data:image/png;base64,...`) of the generated image.
+  imageUrl String? @db.Text
+  width    Int?
+  height   Int?
+
+  /// The exact prompt text sent to the provider for this generation — the
+  /// stored ImagePromptSpec's `fullPrompt` unless the user supplied an
+  /// "Edit Prompt" override, which is never written back into VisualPrompt.
+  promptText    String? @db.Text
+  /// SHA-256 hash of `promptText`, used to decide whether a "Generate"
+  /// click can reuse this row (same version, COMPLETED) or must regenerate.
+  promptVersion String?
+
+  generationTimeMs Int?
+
+  errorMessage String? @db.Text
+  /// One of the ImageGenerationErrorCode values from `lib/ai/image-providers/errors.ts`.
+  errorCode    String?
+
+  /// Future-ready — not populated by any provider today.
+  seed         String?
+  cost         Float?
+  generationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([visualPromptId, slot])
+  @@index([visualPromptId])
+}
+
 model BrandKit {
-  id              String      @id @default(cuid())
+  id String @id @default(cuid())
 
-  name            String
-  website         String?
-  industry        String?
-  description     String?
+  name        String
+  website     String?
+  industry    String?
+  description String?
 
-  targetAudience  String?
-  language        String?     @default("English")
+  targetAudience String?
+  language       String? @default("English")
 
-  tone            String?
-  writingStyle    String?
-  emojiStyle      String?
-  ctaStyle        String?
+  tone         String?
+  writingStyle String?
+  emojiStyle   String?
+  ctaStyle     String?
 
-  logoUrl         String?
+  /// Primary logo — data URL (no object storage configured, same pattern as GeneratedImage.imageUrl).
+  logoUrl          String? @db.Text
+  secondaryLogoUrl String? @db.Text
+  whiteLogoUrl     String? @db.Text
+  darkLogoUrl      String? @db.Text
+  watermarkLogoUrl String? @db.Text
+  watermarkEnabled Boolean @default(false)
 
-  primaryColor    String?
-  secondaryColor  String?
-  accentColor     String?
+  /// "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" — see lib/creative-renderer/types.ts.
+  logoPosition String? @default("bottom-right")
+  /// Safe-area margin as a percentage of the canvas's shorter edge.
+  safeMargin   Int?    @default(5)
 
-  keywords        String[]
-  hashtags        String[]
-  avoidWords      String[]
+  headingFont String? @default("Inter")
+  bodyFont    String? @default("Inter")
 
-  projects        Project[]
+  /// 0-100 — darkness of the gradient overlay behind creative text.
+  overlayOpacity Int?    @default(45)
+  /// "bold" | "elegant" | "minimal" | "playful" — see lib/creative-renderer/types.ts.
+  textStyle      String? @default("bold")
+  /// "bottom-aligned" | "centered" | "split" | "minimal" — see lib/creative-renderer/types.ts.
+  layoutStyle    String? @default("bottom-aligned")
+  /// "outline" | "filled" | "duotone" — cosmetic influence on the CTA button's accent glyph.
+  iconStyle      String? @default("outline")
 
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+
+  keywords   String[]
+  hashtags   String[]
+  avoidWords String[]
+
+  projects Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

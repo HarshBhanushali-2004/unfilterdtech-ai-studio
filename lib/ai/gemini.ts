@@ -1,19 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { AIServiceError } from "./errors"
+import { generateWithGemini } from "./gemini-provider"
 import { generatedInstagramContentSchema } from "./schemas"
 import type { GeneratedInstagramContent } from "./types"
 
-export class AIServiceError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly cause?: unknown
-  ) {
-    super(message)
-    this.name = "AIServiceError"
-  }
-}
+export { AIServiceError } from "./errors"
 
-function extractJson(content: string) {
+export function extractJson(content: string) {
   const cleaned = content.trim()
 
   const fenced = cleaned.match(
@@ -27,54 +19,26 @@ function extractJson(content: string) {
 export async function generateInstagramContent(
   prompt: string
 ): Promise<GeneratedInstagramContent> {
-
-  const apiKey = process.env.GEMINI_API_KEY
-  const modelName =
-    process.env.GEMINI_MODEL ?? "gemini-2.5-flash"
-
-
-  if (!apiKey) {
-    throw new AIServiceError(
-      "Missing GEMINI_API_KEY",
-      503
-    )
-  }
-
-
-  const genAI = new GoogleGenerativeAI(apiKey)
-
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      responseMimeType: "application/json",
-    },
-  })
-
-
-  let result
+  let text: string
 
   try {
-    result = await model.generateContent({
-    contents: [
-        {
-        role: "user",
-        parts: [{ text: prompt }],
-        },
-    ],
-    })  } catch (error) {
-  console.error("Gemini Error:", error)
+    text = await generateWithGemini({
+      prompt,
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
+    })
+  } catch (error) {
+    if (error instanceof AIServiceError) throw error
 
-  throw new AIServiceError(
-    error instanceof Error ? error.message : "Gemini request failed",
-    502,
-    error
-  )
-}
+    console.error("Gemini Error:", error)
 
-
-  const text =
-    result.response.text()
-
+    throw new AIServiceError(
+      error instanceof Error ? error.message : "Gemini request failed",
+      502,
+      error
+    )
+  }
 
   if (!text) {
     throw new AIServiceError(
@@ -118,19 +82,6 @@ export async function rewriteContent(
   originalContent: string,
   instruction: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  const modelName = process.env.GEMINI_MODEL ?? "gemini-2.5-flash"
-
-  if (!apiKey) {
-    throw new AIServiceError("Missing GEMINI_API_KEY", 503)
-  }
-
-  const genAI = new GoogleGenerativeAI(apiKey)
-
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-  })
-
   const prompt = `
 You are an expert social media copywriter.
 
@@ -149,10 +100,12 @@ No code block.
 `
 
   try {
-    const result = await model.generateContent(prompt)
+    const text = await generateWithGemini({ prompt })
 
-    return result.response.text().trim()
+    return text.trim()
   } catch (error) {
+    if (error instanceof AIServiceError) throw error
+
     throw new AIServiceError(
       error instanceof Error ? error.message : "Rewrite failed",
       502,

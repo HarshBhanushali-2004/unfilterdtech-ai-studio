@@ -1,8 +1,27 @@
 "use client";
 
+import { useRef } from "react";
+import { ImageOff, Upload } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ICON_STYLES,
+  LAYOUT_STYLES,
+  LOGO_POSITIONS,
+  RENDERER_FONTS,
+  TEXT_STYLES,
+} from "@/lib/creative-renderer";
 
 export type BrandKitFormValues = {
   name: string;
@@ -19,6 +38,22 @@ export type BrandKitFormValues = {
   ctaStyle: string;
 
   logoUrl: string;
+  secondaryLogoUrl: string;
+  whiteLogoUrl: string;
+  darkLogoUrl: string;
+  watermarkLogoUrl: string;
+  watermarkEnabled: boolean;
+
+  logoPosition: string;
+  safeMargin: string;
+
+  headingFont: string;
+  bodyFont: string;
+
+  overlayOpacity: string;
+  textStyle: string;
+  layoutStyle: string;
+  iconStyle: string;
 
   primaryColor: string;
   secondaryColor: string;
@@ -29,13 +64,111 @@ export type BrandKitFormValues = {
   avoidWords: string;
 };
 
+type FieldValue = string | boolean;
+
 type Props = {
   values: BrandKitFormValues;
   onChange: (
     field: keyof BrandKitFormValues,
-    value: string
+    value: FieldValue
   ) => void;
 };
+
+const LOGO_POSITION_LABELS: Record<string, string> = {
+  "top-left": "Top Left",
+  "top-right": "Top Right",
+  "bottom-left": "Bottom Left",
+  "bottom-right": "Bottom Right",
+  center: "Center",
+};
+
+const TEXT_STYLE_LABELS: Record<string, string> = {
+  bold: "Bold",
+  elegant: "Elegant",
+  minimal: "Minimal",
+  playful: "Playful",
+};
+
+const LAYOUT_STYLE_LABELS: Record<string, string> = {
+  "bottom-aligned": "Bottom Aligned",
+  centered: "Centered",
+  split: "Split",
+  minimal: "Minimal",
+};
+
+const ICON_STYLE_LABELS: Record<string, string> = {
+  outline: "Outline",
+  filled: "Filled",
+  duotone: "Duotone",
+};
+
+function LogoUploadField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleFile(file: File | undefined) {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      onChange(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+
+      <div className="flex items-center gap-3">
+        <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg border bg-muted/40">
+          {value ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={value} alt={label} className="size-full object-contain" />
+          ) : (
+            <ImageOff className="size-5 text-muted-foreground" />
+          )}
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleFile(e.target.files?.[0])}
+        />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Upload
+        </Button>
+
+        {value && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange("")}
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function BrandKitForm({
   values,
@@ -169,6 +302,7 @@ export function BrandKitForm({
               onChange={(e) =>
                 onChange("ctaStyle", e.target.value)
               }
+              placeholder="e.g. Shop Now, Learn More"
             />
           </div>
 
@@ -194,17 +328,6 @@ export function BrandKitForm({
         <h3 className="text-lg font-semibold">
           Branding
         </h3>
-
-        <div className="space-y-2">
-          <Label>Logo URL</Label>
-
-          <Input
-            value={values.logoUrl}
-            onChange={(e) =>
-              onChange("logoUrl", e.target.value)
-            }
-          />
-        </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
@@ -249,6 +372,232 @@ export function BrandKitForm({
                   e.target.value
                 )
               }
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Logos */}
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">
+          Logos
+        </h3>
+
+        <p className="text-sm text-muted-foreground">
+          Used by the Creative Renderer to brand generated images. Uploads are stored directly with your Brand Kit.
+        </p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <LogoUploadField
+            label="Primary Logo"
+            value={values.logoUrl}
+            onChange={(value) => onChange("logoUrl", value)}
+          />
+
+          <LogoUploadField
+            label="Secondary Logo"
+            value={values.secondaryLogoUrl}
+            onChange={(value) => onChange("secondaryLogoUrl", value)}
+          />
+
+          <LogoUploadField
+            label="White Logo"
+            value={values.whiteLogoUrl}
+            onChange={(value) => onChange("whiteLogoUrl", value)}
+          />
+
+          <LogoUploadField
+            label="Dark Logo"
+            value={values.darkLogoUrl}
+            onChange={(value) => onChange("darkLogoUrl", value)}
+          />
+
+          <LogoUploadField
+            label="Watermark Logo"
+            value={values.watermarkLogoUrl}
+            onChange={(value) => onChange("watermarkLogoUrl", value)}
+          />
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Enable Watermark</p>
+              <p className="text-xs text-muted-foreground">Adds a subtle watermark to rendered creatives.</p>
+            </div>
+
+            <Switch
+              checked={values.watermarkEnabled}
+              onCheckedChange={(checked) => onChange("watermarkEnabled", checked)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Creative Renderer */}
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">
+          Creative Renderer
+        </h3>
+
+        <p className="text-sm text-muted-foreground">
+          Defaults used when turning a generated image into a branded, Instagram-ready creative.
+        </p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Preferred Logo Position</Label>
+
+            <Select
+              value={values.logoPosition}
+              onValueChange={(value) => onChange("logoPosition", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOGO_POSITIONS.map((position) => (
+                  <SelectItem key={position} value={position}>
+                    {LOGO_POSITION_LABELS[position]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Heading Font</Label>
+
+            <Select
+              value={values.headingFont}
+              onValueChange={(value) => onChange("headingFont", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RENDERER_FONTS.map((font) => (
+                  <SelectItem key={font} value={font}>
+                    {font}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Body Font</Label>
+
+            <Select
+              value={values.bodyFont}
+              onValueChange={(value) => onChange("bodyFont", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RENDERER_FONTS.map((font) => (
+                  <SelectItem key={font} value={font}>
+                    {font}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Text Style</Label>
+
+            <Select
+              value={values.textStyle}
+              onValueChange={(value) => onChange("textStyle", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEXT_STYLES.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {TEXT_STYLE_LABELS[style]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Layout Style</Label>
+
+            <Select
+              value={values.layoutStyle}
+              onValueChange={(value) => onChange("layoutStyle", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LAYOUT_STYLES.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {LAYOUT_STYLE_LABELS[style]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Icon Style</Label>
+
+            <Select
+              value={values.iconStyle}
+              onValueChange={(value) => onChange("iconStyle", value)}
+            >
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ICON_STYLES.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {ICON_STYLE_LABELS[style]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Safe Margin</Label>
+              <span className="text-sm text-muted-foreground">{values.safeMargin}%</span>
+            </div>
+
+            <input
+              type="range"
+              min="0"
+              max="20"
+              step="1"
+              value={values.safeMargin}
+              onChange={(e) => onChange("safeMargin", e.target.value)}
+              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-border accent-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Overlay Opacity</Label>
+              <span className="text-sm text-muted-foreground">{values.overlayOpacity}%</span>
+            </div>
+
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={values.overlayOpacity}
+              onChange={(e) => onChange("overlayOpacity", e.target.value)}
+              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-border accent-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
         </div>

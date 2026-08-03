@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import type { BrandKit } from "@prisma/client";
 
 import { updateBrandKit } from "@/lib/brand-kit/actions";
 
@@ -25,32 +26,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onUpdated: () => void;
 
-  brand: {
-    id: string;
-
-    name: string;
-    website: string | null;
-    industry: string | null;
-    description: string | null;
-
-    targetAudience: string | null;
-    language: string |null;
-
-    tone: string | null;
-    writingStyle: string | null;
-    emojiStyle: string | null;
-    ctaStyle: string | null;
-
-    logoUrl: string | null;
-
-    primaryColor: string | null;
-    secondaryColor: string | null;
-    accentColor: string | null;
-
-    keywords: string[];
-    hashtags: string[];
-    avoidWords: string[];
-  };
+  brand: BrandKit;
 };
 
 function buildValues(
@@ -71,6 +47,22 @@ function buildValues(
     ctaStyle: brand.ctaStyle ?? "",
 
     logoUrl: brand.logoUrl ?? "",
+    secondaryLogoUrl: brand.secondaryLogoUrl ?? "",
+    whiteLogoUrl: brand.whiteLogoUrl ?? "",
+    darkLogoUrl: brand.darkLogoUrl ?? "",
+    watermarkLogoUrl: brand.watermarkLogoUrl ?? "",
+    watermarkEnabled: brand.watermarkEnabled,
+
+    logoPosition: brand.logoPosition ?? "bottom-right",
+    safeMargin: String(brand.safeMargin ?? 5),
+
+    headingFont: brand.headingFont ?? "Inter",
+    bodyFont: brand.bodyFont ?? "Inter",
+
+    overlayOpacity: String(brand.overlayOpacity ?? 45),
+    textStyle: brand.textStyle ?? "bold",
+    layoutStyle: brand.layoutStyle ?? "bottom-aligned",
+    iconStyle: brand.iconStyle ?? "outline",
 
     primaryColor: brand.primaryColor ?? "#7C3AED",
     secondaryColor: brand.secondaryColor ?? "#2563EB",
@@ -97,7 +89,7 @@ export function EditBrandDialog({
 
   function updateField(
     field: keyof BrandKitFormValues,
-    value: string
+    value: string | boolean
   ) {
     setValues((current) => ({
       ...current,
