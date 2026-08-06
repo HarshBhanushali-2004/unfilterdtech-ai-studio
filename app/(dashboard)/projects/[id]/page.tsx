@@ -220,7 +220,7 @@ export default async function ProjectPage({
                   </div>
 
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/creations/${creation.id}`}>
+                    <Link href={`/creations/${creation.id}?from=projects`}>
                       View
                     </Link>
                   </Button>

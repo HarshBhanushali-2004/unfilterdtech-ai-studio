@@ -1,11 +1,10 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { CopyButton } from "@/components/creations/copy-button";
 import { CreationActions } from "@/components/creations/creation-actions";
+import { CreationBreadcrumbs } from "@/components/creations/creation-breadcrumbs";
 import { AIEditorPanel } from "@/components/creations/ai-editor-panel";
 import { GeneratedContentSections } from "@/components/creations/generated-content-sections";
 import { ResearchPanel } from "@/components/creations/research-panel";
@@ -26,12 +25,29 @@ import {
 } from "@/lib/ai";
 import type { CarouselSlide, StoryFrame, ReelContent } from "@/lib/ai/types";
 
+/**
+ * Resolves which top-level section this creation is being viewed "through" —
+ * Projects or History — the single source of truth for both the sidebar's
+ * active item and the breadcrumb trail. Trusts an explicit `?from=history`
+ * (a creation can belong to a project and still be reached via History),
+ * otherwise defaults to Projects if the creation has one, History if it
+ * doesn't. Never trusts `?from=projects` on a project-less creation — there
+ * would be nothing to link to.
+ */
+function resolveOrigin(requestedFrom: string | undefined, hasProject: boolean): "projects" | "history" {
+  if (requestedFrom === "history") return "history";
+  return hasProject ? "projects" : "history";
+}
+
 export default async function CreationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
+  const { from: requestedFrom } = await searchParams;
 
   const creation = await prisma.creation.findUnique({
     where: {
@@ -58,9 +74,22 @@ export default async function CreationPage({
     notFound();
   }
 
-  const redirectTo = creation.project
-    ? `/projects/${creation.project.id}`
-    : "/projects";
+  const origin = resolveOrigin(requestedFrom, !!creation.project);
+
+  // Canonicalize the URL so it always carries the resolved origin — the
+  // sidebar (a client component with no access to `creation.project`) reads
+  // `?from=` back to decide which nav item to highlight, so this is the
+  // only source of truth for both it and the breadcrumb trail below.
+  if (requestedFrom !== origin) {
+    redirect(`/creations/${id}?from=${origin}`);
+  }
+
+  const redirectTo =
+    origin === "history"
+      ? "/history"
+      : creation.project
+        ? `/projects/${creation.project.id}`
+        : "/projects";
 
   const hashtags = Array.isArray(creation.hashtags)
     ? (creation.hashtags as string[])
@@ -89,13 +118,11 @@ export default async function CreationPage({
   return (
     <>
     <div className="space-y-8">
-      <Link
-        href={redirectTo}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {creation.project ? creation.project.name : "Projects"}
-      </Link>
+      <CreationBreadcrumbs
+        origin={origin}
+        project={creation.project ? { id: creation.project.id, name: creation.project.name } : null}
+        creationTitle={creation.title}
+      />
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div>

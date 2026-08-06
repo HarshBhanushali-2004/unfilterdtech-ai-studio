@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
 import * as React from "react"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
@@ -43,6 +43,97 @@ const navigation = [
   { href: "/brand-kit", label: "Brand Kit", icon: Palette },
 ]
 
+/** A route is active for a nav item if it's an exact match or nested under it — covers any future nested route (e.g. /projects/[id], /projects/[id]/anything) without listing them one by one. */
+function isPathActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/"
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+/**
+ * `/creations/[id]` isn't nested under `/projects` or `/history`, so it
+ * can't inherit their active state from the pathname alone — it needs to
+ * know which one the user came from. The Creation Details page resolves
+ * that (from the creation's own project relationship, or the `from` query
+ * param if it was navigated to explicitly) and canonicalizes the URL to
+ * always carry `?from=projects` or `?from=history`, so this only ever has
+ * to read it back. Isolated in its own component because `useSearchParams`
+ * requires a Suspense boundary.
+ */
+function useCreationOrigin(pathname: string): "projects" | "history" | null {
+  const searchParams = useSearchParams()
+  if (!pathname.startsWith("/creations/")) return null
+  const from = searchParams.get("from")
+  return from === "projects" || from === "history" ? from : null
+}
+
+function NavLink({
+  item,
+  compact,
+  active,
+  onNavigate,
+}: {
+  item: (typeof navigation)[number]
+  compact: boolean
+  active: boolean
+  onNavigate?: () => void
+}) {
+  const link = (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={cn(
+        "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        active && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+        compact && "justify-center px-0"
+      )}
+    >
+      <item.icon className="size-4 shrink-0" />
+      {!compact && <span>{item.label}</span>}
+    </Link>
+  )
+
+  return compact ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{item.label}</TooltipContent>
+    </Tooltip>
+  ) : (
+    link
+  )
+}
+
+/** The part of the nav that needs `?from=` (via useCreationOrigin) — split out so only this, not the whole sidebar, needs a Suspense boundary. */
+function SidebarNav({ compact, onNavigate }: { compact: boolean; onNavigate?: () => void }) {
+  const pathname = usePathname()
+  const creationOrigin = useCreationOrigin(pathname)
+
+  return (
+    <nav className="space-y-1" aria-label="Main navigation">
+      {navigation.map((item) => {
+        const active =
+          isPathActive(pathname, item.href) ||
+          (item.href === "/projects" && creationOrigin === "projects") ||
+          (item.href === "/history" && creationOrigin === "history")
+
+        return <NavLink key={item.href} item={item} compact={compact} active={active} onNavigate={onNavigate} />
+      })}
+    </nav>
+  )
+}
+
+/** Matches SidebarNav's structure with no active item highlighted — shown only for the brief instant before the Suspense boundary resolves search params on a /creations/[id] page. */
+function SidebarNavFallback({ compact, onNavigate }: { compact: boolean; onNavigate?: () => void }) {
+  const pathname = usePathname()
+
+  return (
+    <nav className="space-y-1" aria-label="Main navigation">
+      {navigation.map((item) => (
+        <NavLink key={item.href} item={item} compact={compact} active={isPathActive(pathname, item.href)} onNavigate={onNavigate} />
+      ))}
+    </nav>
+  )
+}
+
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3">
@@ -71,32 +162,9 @@ function SidebarContent({ compact = false, onNavigate }: { compact?: boolean; on
       </div>
       <div className="px-3 py-4">
         {!compact && <p className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Workspace</p>}
-        <nav className="space-y-1" aria-label="Main navigation">
-          {navigation.map((item) => {
-            const active = pathname === item.href
-            const link = (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                className={cn(
-                  "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                  active && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
-                  compact && "justify-center px-0"
-                )}
-              >
-                <item.icon className="size-4 shrink-0" />
-                {!compact && <span>{item.label}</span>}
-              </Link>
-            )
-            return compact ? (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>{link}</TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
-              </Tooltip>
-            ) : link
-          })}
-        </nav>
+        <React.Suspense fallback={<SidebarNavFallback compact={compact} onNavigate={onNavigate} />}>
+          <SidebarNav compact={compact} onNavigate={onNavigate} />
+        </React.Suspense>
       </div>
       <div className="mt-auto p-3">
         <Link
