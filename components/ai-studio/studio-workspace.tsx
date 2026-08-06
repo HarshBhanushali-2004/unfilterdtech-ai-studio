@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { AlertCircle, Loader2, Sparkles } from "lucide-react"
 
 import { ContentTypeSelector } from "@/components/ai-studio/content-type-selector"
+import { GenerationProgress } from "@/components/ai-studio/generation-progress"
 import { OutputSkeleton } from "@/components/ai-studio/output-skeleton"
 import { GenerationSettings } from "@/components/ai-studio/generation-settings"
 import { OutputPanel } from "@/components/ai-studio/output-panel"
@@ -285,7 +286,10 @@ export function StudioWorkspace() {
 
         <div className="space-y-6">
           {isLoading ? (
-            <OutputSkeleton />
+            <div className="space-y-6">
+              <GenerationProgress />
+              <OutputSkeleton />
+            </div>
           ) : error ? (
             <GenerationError message={error} onRetry={generate} />
           ) : (

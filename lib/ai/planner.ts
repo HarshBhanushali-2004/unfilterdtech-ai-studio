@@ -1,4 +1,5 @@
 import { AIServiceError, extractJson } from "./gemini"
+import { toFriendlyAIServiceError } from "./errors"
 import { generateWithGemini } from "./gemini-provider"
 import { buildPlannerPrompt } from "./planner-prompt-builder"
 import { plannerObjectSchema, type PlannerObject } from "./planner-schemas"
@@ -27,14 +28,9 @@ export async function generatePlanner(
       },
     })
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    console.error("Gemini Planner Error:", error)
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Gemini planner request failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't plan this content right now. Please try again in a moment."
     )
   }
 

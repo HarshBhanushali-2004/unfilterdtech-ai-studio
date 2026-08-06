@@ -1,4 +1,5 @@
 import { AIServiceError, extractJson } from "./gemini"
+import { toFriendlyAIServiceError } from "./errors"
 import { generateWithGemini } from "./gemini-provider"
 import { buildEvaluationPrompt, type EvaluationContent } from "./evaluation-prompt-builder"
 import { evaluationResultSchema, type EvaluationResult } from "./evaluation-schemas"
@@ -23,14 +24,9 @@ export async function generateEvaluation(
       },
     })
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    console.error("Gemini Evaluation Error:", error)
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Gemini evaluation request failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't evaluate this content right now. Please try again in a moment."
     )
   }
 

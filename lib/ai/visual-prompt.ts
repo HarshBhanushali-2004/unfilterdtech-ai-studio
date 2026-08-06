@@ -1,4 +1,5 @@
 import { AIServiceError, extractJson } from "./gemini"
+import { toFriendlyAIServiceError } from "./errors"
 import { generateWithGemini } from "./gemini-provider"
 import type { PlannerObject } from "./planner-schemas"
 import type { ResearchObject } from "./research-schemas"
@@ -29,14 +30,9 @@ export async function generateVisualPrompt(
       },
     })
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    console.error("Gemini Visual Prompt Error:", error)
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Gemini visual prompt request failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't generate visual prompts right now. Please try again in a moment."
     )
   }
 

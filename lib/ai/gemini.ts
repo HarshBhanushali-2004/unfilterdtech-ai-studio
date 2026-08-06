@@ -1,4 +1,4 @@
-import { AIServiceError } from "./errors"
+import { AIServiceError, toFriendlyAIServiceError } from "./errors"
 import { generateWithGemini } from "./gemini-provider"
 import { generatedInstagramContentSchema } from "./schemas"
 import type { GeneratedInstagramContent } from "./types"
@@ -29,14 +29,9 @@ export async function generateInstagramContent(
       },
     })
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    console.error("Gemini Error:", error)
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Gemini request failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't generate your content right now. Please try again in a moment."
     )
   }
 
@@ -104,12 +99,9 @@ No code block.
 
     return text.trim()
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Rewrite failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't rewrite your content right now. Please try again in a moment."
     )
   }
 }

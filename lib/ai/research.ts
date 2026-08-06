@@ -1,4 +1,5 @@
 import { AIServiceError, extractJson } from "./gemini"
+import { toFriendlyAIServiceError } from "./errors"
 import { generateWithGemini } from "./gemini-provider"
 import { buildResearchPrompt } from "./research-prompt-builder"
 import { researchObjectSchema, type ResearchObject } from "./research-schemas"
@@ -24,14 +25,9 @@ export async function generateResearch(
       },
     })
   } catch (error) {
-    if (error instanceof AIServiceError) throw error
-
-    console.error("Gemini Research Error:", error)
-
-    throw new AIServiceError(
-      error instanceof Error ? error.message : "Gemini research request failed",
-      502,
-      error
+    throw toFriendlyAIServiceError(
+      error,
+      "We couldn't research this topic right now. Please try again in a moment."
     )
   }
 
