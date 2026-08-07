@@ -9,6 +9,14 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import { ProjectsGrid } from "@/components/projects/projects-grid";
 
+// Without this, Next statically prerenders this page at build time (no
+// dynamic API/searchParams usage for Next to infer freshness from) — in
+// production, newly created/edited/deleted projects then silently fail to
+// show up until the next full rebuild, even though `router.refresh()` is
+// called correctly on every mutation. Matches the pattern already used on
+// `/` and `/history`.
+export const dynamic = "force-dynamic";
+
 export default async function ProjectsPage() {
   const projects = await prisma.project.findMany({
     include: {

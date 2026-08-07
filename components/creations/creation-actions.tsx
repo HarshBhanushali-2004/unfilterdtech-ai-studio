@@ -2,20 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Download, Pencil, Trash2, Copy as CopyAllIcon } from "lucide-react";
+import { Copy, Download, Pencil, Copy as CopyAllIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { EditCreationDialog } from "@/components/creations/edit-creation-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
@@ -30,47 +20,22 @@ type CreationActionsProps = {
   creation: ExportableCreation & {
     id: string;
   };
-  redirectTo: string;
 };
 
 const actionButtonClass = "h-9 gap-2 rounded-lg px-3.5";
 
-export function CreationActions({
-  creation,
-  redirectTo,
-}: CreationActionsProps) {
+/**
+ * Secondary utility actions (Edit / Duplicate / Copy Caption / Copy All /
+ * Download) — compact outline buttons directly in the header, not tucked
+ * behind a menu. Deliberately separate from the Review page's primary
+ * bottom action bar (Approve & Publish / Schedule / Regenerate / Delete):
+ * these are frequently-used utilities, not the core approve/publish
+ * workflow, but "frequently used" still means "no extra click to reach."
+ */
+export function CreationActions({ creation }: CreationActionsProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
-
-  async function deleteCreation() {
-    try {
-      setDeleting(true);
-
-      const res = await fetch(`/api/creations/${creation.id}`, {
-        method: "DELETE",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error);
-      }
-
-      toast.success("Creation deleted");
-
-      router.push(redirectTo);
-      router.refresh();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete creation"
-      );
-      setDeleting(false);
-      setDeleteOpen(false);
-    }
-  }
 
   async function duplicateCreation() {
     if (duplicating) return;
@@ -158,17 +123,7 @@ export function CreationActions({
           onClick={downloadAsMarkdown}
         >
           <Download className="h-4 w-4" />
-          Download Markdown
-        </Button>
-
-        <Button
-          variant="destructive"
-          className={actionButtonClass}
-          onClick={() => setDeleteOpen(true)}
-          disabled={deleting}
-        >
-          <Trash2 className="h-4 w-4" />
-          {deleting ? "Deleting..." : "Delete"}
+          Download
         </Button>
       </div>
 
@@ -178,28 +133,6 @@ export function CreationActions({
         creation={creation}
         onUpdated={() => router.refresh()}
       />
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this creation?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone. The creation and all of its generated
-              content will be permanently removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={deleteCreation}
-              disabled={deleting}
-            >
-              {deleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

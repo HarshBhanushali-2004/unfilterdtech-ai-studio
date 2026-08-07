@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto"
+
 import type { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
@@ -29,6 +31,19 @@ async function collectSourceContext(topic: string): Promise<string[]> {
   return results.filter((value): value is string => Boolean(value))
 }
 
+export type GetOrCreateResearchOptions = {
+  /**
+   * Skips the cache lookup entirely and always calls Gemini, persisting the
+   * result under a fresh, randomized key instead of the deterministic
+   * topic hash. Used by the Creation "Regenerate" action — reusing the
+   * canonical cached row (or overwriting it in place) would either return
+   * byte-identical content or silently change what every *other* creation
+   * sharing this topic sees, since Research rows are a cross-creation
+   * cache, not owned by any single Creation.
+   */
+  forceRegenerate?: boolean
+}
+
 /**
  * The Research Engine's single entry point, and the first step of every
  * content generation. Returns cached structured research for a topic when
@@ -37,18 +52,23 @@ async function collectSourceContext(topic: string): Promise<string[]> {
  * Deliberately takes only a topic — no Brand Kit, tone, or content type.
  * Research is factual and reusable across every brand and every format.
  */
-export async function getOrCreateResearch(topic: string): Promise<ResearchResult> {
-  const topicKey = hashTopic(topic)
+export async function getOrCreateResearch(
+  topic: string,
+  options: GetOrCreateResearchOptions = {}
+): Promise<ResearchResult> {
+  const topicKey = options.forceRegenerate ? `regen:${randomUUID()}` : hashTopic(topic)
 
-  const existing = await prisma.research.findUnique({ where: { topicKey } })
+  if (!options.forceRegenerate) {
+    const existing = await prisma.research.findUnique({ where: { topicKey } })
 
-  if (existing) {
-    const parsed = researchObjectSchema.safeParse(existing.data)
-    if (parsed.success) {
-      return { id: existing.id, data: parsed.data, cached: true }
+    if (existing) {
+      const parsed = researchObjectSchema.safeParse(existing.data)
+      if (parsed.success) {
+        return { id: existing.id, data: parsed.data, cached: true }
+      }
+      // A stored record that no longer matches the current schema (e.g. it
+      // predates a newly added field) falls through and gets regenerated below.
     }
-    // A stored record that no longer matches the current schema (e.g. it
-    // predates a newly added field) falls through and gets regenerated below.
   }
 
   const context = await collectSourceContext(topic)

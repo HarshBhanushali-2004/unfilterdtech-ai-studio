@@ -3,8 +3,19 @@
 import Link from "next/link";
 import { ArrowUpRight, Globe, Palette } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import type { BrandKit } from "@prisma/client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { BrandKitActions } from "./brand-kit-actions";
 import { EditBrandDialog } from "./edit-brand-dialog";
 
@@ -21,10 +32,23 @@ export function BrandKitCard({
   onUpdated,
 }: BrandKitCardProps) {
   const [open, setOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
-    await deleteBrandKit(brand.id);
-    onUpdated();
+    try {
+      setDeleting(true);
+      await deleteBrandKit(brand.id);
+      toast.success("Brand Kit deleted");
+      onUpdated();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete Brand Kit"
+      );
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
   }
 
   return (
@@ -61,7 +85,7 @@ export function BrandKitCard({
 
             <BrandKitActions
               onEdit={() => setOpen(true)}
-              onDelete={handleDelete}
+              onDelete={() => setDeleteOpen(true)}
             />
           </div>
         </div>
@@ -102,6 +126,28 @@ export function BrandKitCard({
         brand={brand}
         onUpdated={onUpdated}
       />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{brand.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. Projects using this Brand Kit will be kept
+              but unlinked from it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

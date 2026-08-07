@@ -4,7 +4,6 @@ export { buildBrandContext } from "./brand-context"
 export {
   AIServiceError,
   generateInstagramContent,
-  rewriteContent,
 } from "./gemini"
 
 export { researchObjectSchema, RESEARCH_LIST_FIELDS } from "./research-schemas"

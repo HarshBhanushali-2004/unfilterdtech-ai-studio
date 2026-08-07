@@ -73,35 +73,3 @@ export async function generateInstagramContent(
 
   return validation.data
 }
-export async function rewriteContent(
-  originalContent: string,
-  instruction: string
-): Promise<string> {
-  const prompt = `
-You are an expert social media copywriter.
-
-Rewrite the following content.
-
-Instruction:
-${instruction}
-
-Original Content:
-${originalContent}
-
-Return ONLY the rewritten content.
-No markdown.
-No explanation.
-No code block.
-`
-
-  try {
-    const text = await generateWithGemini({ prompt })
-
-    return text.trim()
-  } catch (error) {
-    throw toFriendlyAIServiceError(
-      error,
-      "We couldn't rewrite your content right now. Please try again in a moment."
-    )
-  }
-}

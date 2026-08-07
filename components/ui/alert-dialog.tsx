@@ -51,6 +51,18 @@ function AlertDialogContent({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: "default" | "sm"
 }) {
+  // Same fix as DialogContent (components/ui/dialog.tsx) — AlertDialog's
+  // Content is built on the same underlying `DialogPrimitive.Content`, so it
+  // has the identical bug: Dialog's default `onCloseAutoFocus` unconditionally
+  // prevents FocusScope's own restore-to-previously-focused-element fallback
+  // before falling back to a `triggerRef` that's never populated (every
+  // AlertDialog here opens via a plain `<Button onClick={() =>
+  // setDeleteOpen(true)}>`, not an `AlertDialogTrigger`). See the longer
+  // comment on `DialogContent` for exactly why `onOpenAutoFocus` (not a
+  // mount-time `useState`/`useRef`) is what makes the capture fire fresh on
+  // every open.
+  const returnFocusRef = React.useRef<Element | null>(null)
+
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
@@ -61,6 +73,16 @@ function AlertDialogContent({
           "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className
         )}
+        onOpenAutoFocus={() => {
+          returnFocusRef.current = document.activeElement
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef.current
+          if (target instanceof HTMLElement && document.body.contains(target)) {
+            event.preventDefault()
+            target.focus()
+          }
+        }}
         {...props}
       />
     </AlertDialogPortal>

@@ -1,19 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import { CopyButton } from "@/components/creations/copy-button";
 import { CreationActions } from "@/components/creations/creation-actions";
 import { CreationBreadcrumbs } from "@/components/creations/creation-breadcrumbs";
-import { AIEditorPanel } from "@/components/creations/ai-editor-panel";
+import { DeveloperDetails } from "@/components/creations/developer-details";
 import { GeneratedContentSections } from "@/components/creations/generated-content-sections";
-import { ResearchPanel } from "@/components/creations/research-panel";
-import { PlannerPanel } from "@/components/creations/planner-panel";
-import { KeywordPanel } from "@/components/creations/keyword-panel";
-import { QualityScorePanel } from "@/components/creations/quality-score-panel";
-import { SuggestionsPanel } from "@/components/creations/suggestions-panel";
-import { VisualAssetsPanel } from "@/components/creations/visual-assets-panel";
-import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
+import { GeneratedImagesGallery } from "@/components/creations/generated-images-gallery";
+import { HashtagsCard } from "@/components/creations/hashtags-card";
+import { PostCard } from "@/components/creations/post-card";
+import { ReviewActionBar } from "@/components/creations/review-action-bar";
 import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
 import { formatDate } from "@/lib/format-date";
 import {
@@ -23,6 +18,7 @@ import {
   suggestionSchema,
   visualPromptObjectSchema,
 } from "@/lib/ai";
+import { z } from "zod";
 import type { CarouselSlide, StoryFrame, ReelContent } from "@/lib/ai/types";
 
 /**
@@ -94,6 +90,13 @@ export default async function CreationPage({
   const hashtags = Array.isArray(creation.hashtags)
     ? (creation.hashtags as string[])
     : [];
+  const carousel = Array.isArray(creation.carousel)
+    ? (creation.carousel as unknown as CarouselSlide[])
+    : null;
+  const story = Array.isArray(creation.story)
+    ? (creation.story as unknown as StoryFrame[])
+    : null;
+  const reel = creation.reel ? (creation.reel as unknown as ReelContent) : null;
 
   const research = creation.research
     ? researchObjectSchema.safeParse(creation.research.data)
@@ -116,8 +119,7 @@ export default async function CreationPage({
     : null;
 
   return (
-    <>
-    <div className="space-y-8">
+    <div className="space-y-8 pb-4">
       <CreationBreadcrumbs
         origin={origin}
         project={creation.project ? { id: creation.project.id, name: creation.project.name } : null}
@@ -155,95 +157,61 @@ export default async function CreationPage({
             caption: creation.caption,
             prompt: creation.prompt,
             hashtags,
-            carousel: creation.carousel as unknown as CarouselSlide[] | null,
-            story: creation.story as unknown as StoryFrame[] | null,
-            reel: creation.reel as unknown as ReelContent | null,
+            carousel,
+            story,
+            reel,
           }}
-          redirectTo={redirectTo}
         />
       </div>
 
-      <div className="grid gap-8 xl:grid-cols-12 xl:gap-10">
-        {/* Left Column */}
-        <div className="space-y-8 pb-10 xl:col-span-5">
-          <div className="rounded-2xl border p-5 md:p-6">
-            <h2 className="mb-5 text-lg font-semibold">
-              Caption
-            </h2>
-
-            <p className="whitespace-pre-wrap leading-7">
-              {creation.caption}
-            </p>
-
-          </div>
-          <div className="rounded-2xl border p-5 md:p-6">
-            <CollapsibleSection title="Prompt Used" defaultOpen={false}>
-              <div className="space-y-4">
-                <div className="flex justify-end">
-                  <CopyButton
-                    text={creation.prompt || ""}
-                    label="Copy"
-                    successMessage="Prompt copied"
-                    variant="outline"
-                    size="sm"
-                  />
-                </div>
-
-                <div className="rounded-lg bg-muted/40 p-5">
-                  <pre className="whitespace-pre-wrap break-words text-sm leading-6">
-                    {creation.prompt || "No prompt available."}
-                  </pre>
-                </div>
-              </div>
-            </CollapsibleSection>
-          </div>
-
-          {research?.success && <ResearchPanel research={research.data} />}
-          {planner?.success && <PlannerPanel planner={planner.data} />}
-          {planner?.success && (
-            <KeywordPanel keywords={planner.data.keywordIntelligence} />
-          )}
-          {qualityScore?.success && (
-            <QualityScorePanel scores={qualityScore.data} />
-          )}
-          {suggestions?.success && (
-            <SuggestionsPanel suggestions={suggestions.data} />
-          )}
-          {visualPrompt?.success && (
-            <VisualAssetsPanel
-              visualPromptId={creation.visualPrompt!.id}
-              visualPrompt={visualPrompt.data}
-            />
-          )}
-        </div>
-
-        <div className="xl:col-span-7">
-          <AIEditorPanel
-            creationId={creation.id}
-            content={creation.caption}
+      {/* Review page: Generated Content → Generated Images → Hashtags → Publishing Preview */}
+      <div className="space-y-8">
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Generated Content</h2>
+          <GeneratedContentSections
+            caption={creation.caption}
+            hashtags={hashtags}
+            carousel={carousel}
+            story={story}
+            reel={reel}
+            tabs={["caption", "carousel", "stories", "reel"]}
           />
-        </div>
-      </div>
-    </div>
+        </section>
 
-    {/* Generated Content Preview */}
-    <div className="mt-10">
-      <GeneratedContentSections
-        caption={creation.caption}
-        hashtags={hashtags}
-        carousel={
-          Array.isArray(creation.carousel)
-            ? (creation.carousel as unknown as CarouselSlide[])
-            : null
-        }
-        story={
-          Array.isArray(creation.story)
-            ? (creation.story as unknown as StoryFrame[])
-            : null
-        }
-        reel={creation.reel ? (creation.reel as unknown as ReelContent) : null}
+        <section className="space-y-4 rounded-2xl border p-5 md:p-6">
+          <h2 className="text-lg font-semibold">Generated Images</h2>
+          <GeneratedImagesGallery visualPromptId={creation.visualPromptId} />
+        </section>
+
+        {hashtags.length > 0 && (
+          <section className="space-y-4 rounded-2xl border p-5 md:p-6">
+            <h2 className="text-lg font-semibold">Hashtags</h2>
+            <HashtagsCard hashtags={hashtags} />
+          </section>
+        )}
+
+        <section className="space-y-4 rounded-2xl border p-5 md:p-6">
+          <h2 className="text-lg font-semibold">Publishing Preview</h2>
+          <PostCard caption={creation.caption} hashtags={hashtags} />
+        </section>
+
+        <DeveloperDetails
+          prompt={creation.prompt}
+          research={research?.success ? research.data : null}
+          planner={planner?.success ? planner.data : null}
+          qualityScore={qualityScore?.success ? qualityScore.data : null}
+          suggestions={suggestions?.success ? suggestions.data : null}
+          visualPromptId={creation.visualPromptId}
+          visualPrompt={visualPrompt?.success ? visualPrompt.data : null}
+        />
+      </div>
+
+      <ReviewActionBar
+        creationId={creation.id}
+        status={creation.status}
+        scheduledAt={creation.scheduledAt?.toISOString() ?? null}
+        deleteRedirectTo={redirectTo}
       />
     </div>
-    </>
   );
 }

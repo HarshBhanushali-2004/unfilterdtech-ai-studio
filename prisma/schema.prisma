@@ -20,6 +20,18 @@ enum ImageGenerationStatus {
   FAILED
 }
 
+/// Where a Creation sits in the review → publish workflow (Review page
+/// bottom action bar). No real social-publishing integration exists yet
+/// (no OAuth, no platform API calls) — PUBLISHED/SCHEDULED are a status
+/// scaffold for that future integration, not a claim that a post actually
+/// went out. See CLAUDE.md Section 12.
+enum CreationStatus {
+  DRAFT
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+}
+
 model Project {
   id          String  @id @default(cuid())
   name        String
@@ -57,6 +69,14 @@ model Creation {
 
   contentType ContentType
 
+  /// Review → publish workflow state, set from the Review page's bottom
+  /// action bar. Defaults to DRAFT for every existing and newly-saved
+  /// creation.
+  status      CreationStatus @default(DRAFT)
+  /// Set when status is SCHEDULED — when the creation is meant to go out.
+  /// Cleared when status moves to PUBLISHED or back to DRAFT/APPROVED.
+  scheduledAt DateTime?
+
   tone       String?
   creativity Int?
 
@@ -81,6 +101,7 @@ model Creation {
   @@index([plannerId])
   @@index([visualPromptId])
   @@index([createdAt])
+  @@index([status])
 }
 
 /// A cached, structured knowledge brief for a topic — the output of the

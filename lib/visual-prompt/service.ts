@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto"
+
 import type { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
@@ -14,6 +16,16 @@ export type VisualPromptResult = {
   cached: boolean
 }
 
+export type GetOrCreateVisualPromptOptions = {
+  /**
+   * Skips the cache lookup and always calls Gemini, persisting under a
+   * fresh, randomized key rather than the deterministic prompt key — see
+   * the matching option on `getOrCreateResearch` for why (VisualPrompt rows
+   * are a cross-creation cache).
+   */
+  forceRegenerate?: boolean
+}
+
 /**
  * The Visual Prompt Engine's single entry point — the third intelligence
  * step, after Research and Planner and before generation. Returns cached
@@ -22,24 +34,23 @@ export type VisualPromptResult = {
  * them. Independent of the Instagram Content Generator (Feature 5) — never
  * imported by `buildInstagramContentPrompt`.
  */
-export async function getOrCreateVisualPrompt({
-  plannerId,
-  planner,
-  research,
-  brandKitId,
-  brandContext,
-}: VisualPromptInput): Promise<VisualPromptResult> {
-  const promptKey = hashPromptKey({ plannerId, brandKitId })
+export async function getOrCreateVisualPrompt(
+  { plannerId, planner, research, brandKitId, brandContext }: VisualPromptInput,
+  options: GetOrCreateVisualPromptOptions = {}
+): Promise<VisualPromptResult> {
+  const promptKey = options.forceRegenerate ? `regen:${randomUUID()}` : hashPromptKey({ plannerId, brandKitId })
 
-  const existing = await prisma.visualPrompt.findUnique({ where: { promptKey } })
+  if (!options.forceRegenerate) {
+    const existing = await prisma.visualPrompt.findUnique({ where: { promptKey } })
 
-  if (existing) {
-    const parsed = visualPromptObjectSchema.safeParse(existing.data)
-    if (parsed.success) {
-      return { id: existing.id, data: parsed.data, cached: true }
+    if (existing) {
+      const parsed = visualPromptObjectSchema.safeParse(existing.data)
+      if (parsed.success) {
+        return { id: existing.id, data: parsed.data, cached: true }
+      }
+      // A stored record that no longer matches the current schema falls
+      // through and gets regenerated below.
     }
-    // A stored record that no longer matches the current schema falls
-    // through and gets regenerated below.
   }
 
   const data = await generateVisualPrompt(research, planner, brandContext)

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { ContentType, type Prisma } from "@prisma/client";
+import { ContentType } from "@prisma/client";
 import { z } from "zod";
 
-import { AIServiceError, generateEvaluation } from "@/lib/ai";
-import { loadBrandContext } from "@/lib/brand-kit/load-context";
+import { visualPromptObjectSchema } from "@/lib/ai";
+import { evaluateCreation } from "@/lib/creation-evaluation";
+import { generateImagesForCreation } from "@/lib/image-generation/generate-for-creation";
 import { prisma } from "@/lib/prisma";
 import { formatZodError } from "@/lib/validation";
+
+export const runtime = "nodejs";
 
 const contentTypeMap: Record<string, ContentType> = {
   post: ContentType.POST,
@@ -29,32 +32,36 @@ const createCreationSchema = z.object({
 });
 
 /**
- * AI Quality Score + AI Suggestions — runs once, at save time, against the
- * finished content. Best-effort: a failure here (e.g. Gemini unavailable)
- * must never block saving the creation, matching the existing Brand Kit
- * context resilience pattern.
+ * Kicks off image generation for every slot the creation's content type
+ * needs (Feature: "AI generates everything" — the Review page's "Generated
+ * Images" section is meant to already be populated by the time a creator
+ * looks at it, not something they trigger manually). Best-effort like
+ * `evaluateCreation`: a Gemini image failure must never block the save
+ * itself — `generateImagesForCreation`/`generateImageForSlot` already
+ * persist a per-slot FAILED status rather than throwing, so this only
+ * catches something more fundamental (e.g. the visual prompt row missing).
  */
-async function evaluateCreation(
-  caption: string,
-  hashtags: unknown,
-  projectId: string | null
-): Promise<{ qualityScore: Prisma.InputJsonValue | undefined; suggestions: Prisma.InputJsonValue | undefined }> {
+async function generateImagesForNewCreation(
+  visualPromptId: string | undefined,
+  contentType: ContentType
+): Promise<void> {
+  if (!visualPromptId) return;
+
   try {
-    const { context: brandContext } = await loadBrandContext(projectId);
-    const normalizedHashtags = Array.isArray(hashtags) ? (hashtags as string[]) : [];
+    const visualPrompt = await prisma.visualPrompt.findUnique({ where: { id: visualPromptId } });
+    if (!visualPrompt) return;
 
-    const evaluation = await generateEvaluation(
-      { caption, hashtags: normalizedHashtags },
-      brandContext
-    );
+    const parsed = visualPromptObjectSchema.safeParse(visualPrompt.data);
+    if (!parsed.success) return;
 
-    return {
-      qualityScore: evaluation.scores as unknown as Prisma.InputJsonValue,
-      suggestions: evaluation.suggestions as unknown as Prisma.InputJsonValue,
-    };
+    await generateImagesForCreation({
+      visualPromptId,
+      visualPrompt: parsed.data,
+      contentType,
+      forceRegenerate: false,
+    });
   } catch (error) {
-    console.error("Failed to evaluate creation:", error instanceof AIServiceError ? error.message : error);
-    return { qualityScore: undefined, suggestions: undefined };
+    console.error("Failed to generate images for creation:", error);
   }
 }
 
@@ -108,6 +115,8 @@ export async function POST(request: Request) {
         model: body.model ?? "Gemini",
       },
     });
+
+    await generateImagesForNewCreation(validation.data.visualPromptId, contentType);
 
     return NextResponse.json({
       success: true,
