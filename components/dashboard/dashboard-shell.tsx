@@ -13,6 +13,7 @@ import {
   Menu,
   Moon,
   Palette,
+  Plug,
   Plus,
   Settings,
   Sparkles,
@@ -41,6 +42,7 @@ const navigation = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/history", label: "History", icon: Clock3 },
   { href: "/brand-kit", label: "Brand Kit", icon: Palette },
+  { href: "/connections", label: "Connections", icon: Plug },
 ]
 
 /** A route is active for a nav item if it's an exact match or nested under it — covers any future nested route (e.g. /projects/[id], /projects/[id]/anything) without listing them one by one. */

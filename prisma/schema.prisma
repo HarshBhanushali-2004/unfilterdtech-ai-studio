@@ -245,6 +245,89 @@ model GeneratedImage {
   @@index([visualPromptId])
 }
 
+/// Social platforms supported by the Connections system (Social Publishing
+/// Phase 1 — see CLAUDE.md). Order here is display order on the Connections
+/// page; `lib/connections/platforms.ts` derives its list from this enum via
+/// `Object.values(Platform)`, so keep the two in sync by editing only here.
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  TWITTER
+  YOUTUBE
+}
+
+/// Connection lifecycle for a ConnectedAccount. EXPIRED added in Social
+/// Publishing Phase 2B (real Google/YouTube OAuth + automatic token
+/// refresh, see CLAUDE.md) — a connection whose access token could not be
+/// silently refreshed (refresh token missing, revoked, or the vendor
+/// rejected it). Distinct from DISCONNECTED: the row and its last-known
+/// account info are kept so the UI can prompt "reconnect" against the same
+/// account instead of showing a bare "not connected" card.
+enum ConnectionStatus {
+  CONNECTED
+  EXPIRED
+  DISCONNECTED
+}
+
+/// A social platform account linked to this workspace — Social Publishing
+/// Phase 1 (Connections foundation) + Phase 2B (real Google/YouTube OAuth,
+/// see CLAUDE.md). Instagram/Facebook/LinkedIn/X are still mock-connected
+/// via `lib/connections/actions.ts`'s `connectPlatform`; YouTube goes
+/// through a real authorization-code exchange
+/// (`app/api/social/[platform]/{connect,callback}/route.ts` +
+/// `lib/social/providers/google.ts`) and automatic refresh
+/// (`lib/connections/token-refresh.ts`).
+///
+/// One row per platform today (`connectPlatform`/`disconnectPlatform` key
+/// off `platform` alone) — `userId` is a forward-compatible scoping column
+/// for when multi-tenancy lands (see CLAUDE.md Section 8/29), left
+/// unpopulated and unenforced until then; do not start relying on it being
+/// set.
+///
+/// `accessToken`/`refreshToken` are still plaintext — real Google tokens
+/// are now stored here (not just Phase 1's mock placeholder strings), so
+/// this is a real, not hypothetical, gap. Encrypting these at rest is a
+/// flagged, deliberately out-of-scope follow-up (see the Phase 2B summary
+/// in chat) — do not assume it's handled.
+model ConnectedAccount {
+  id String @id @default(cuid())
+
+  /// Reserved for future per-user scoping — unused/unenforced (see above).
+  userId String?
+
+  platform Platform
+
+  /// The account's id on the platform itself (e.g. Instagram's numeric user id).
+  platformAccountId String?
+  accountName       String?
+  accountUsername   String?
+  /// URL of the account's profile picture. Populated for real OAuth
+  /// connections (e.g. YouTube's channel thumbnail); the mock connect flow
+  /// leaves it null and the UI renders a placeholder avatar instead.
+  profileImage      String? @db.Text
+
+  accessToken    String? @db.Text
+  refreshToken   String? @db.Text
+  tokenExpiresAt DateTime?
+
+  status ConnectionStatus @default(DISCONNECTED)
+
+  /// When this connection was last actually (re)established via the OAuth
+  /// flow or the Phase 1 mock connect — distinct from `updatedAt`, which
+  /// also moves on a silent background token refresh
+  /// (`lib/connections/token-refresh.ts`) that isn't a user-initiated
+  /// "connect". Null only for rows that predate this column.
+  connectedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([platform])
+  @@index([status])
+}
+
 model BrandKit {
   id String @id @default(cuid())
 
