@@ -20,6 +20,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   exchange_failed: "That sign-in link expired. Please try connecting again.",
   missing_channel:
     "This Google account doesn't have a YouTube channel. Try a different account, or create a channel first.",
+  missing_page:
+    "This Facebook account doesn't manage any Facebook Pages. Create or get access to a Page, then try again.",
+  missing_instagram_account:
+    "This Facebook Page doesn't have a linked Instagram professional account. Link one in Meta Business Suite, then try again.",
   network_error: "Couldn't reach the platform. Please check your connection and try again.",
   not_configured: "This platform isn't set up yet. Please try again later.",
   unknown: "Something went wrong while connecting. Please try again.",

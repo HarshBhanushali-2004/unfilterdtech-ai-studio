@@ -3,6 +3,13 @@ export type SocialAuthErrorCode =
   | "invalid_state"
   | "exchange_failed"
   | "missing_channel"
+  /** Meta only: the authorizing Facebook account doesn't manage any
+   * Facebook Pages (`pages_show_list` returned none). */
+  | "missing_page"
+  /** Meta/Instagram only: the Facebook Page has no linked Instagram
+   * professional (business/creator) account — e.g. it's linked to a
+   * personal Instagram account, which has no Graph API access. */
+  | "missing_instagram_account"
   | "network_error"
   | "not_configured"
   | "unknown";

@@ -271,13 +271,22 @@ enum ConnectionStatus {
 }
 
 /// A social platform account linked to this workspace — Social Publishing
-/// Phase 1 (Connections foundation) + Phase 2B (real Google/YouTube OAuth,
-/// see CLAUDE.md). Instagram/Facebook/LinkedIn/X are still mock-connected
-/// via `lib/connections/actions.ts`'s `connectPlatform`; YouTube goes
-/// through a real authorization-code exchange
+/// Phase 1 (Connections foundation) + Phase 2B (real OAuth, see CLAUDE.md).
+/// LinkedIn/X are still mock-connected via `lib/connections/actions.ts`'s
+/// `connectPlatform`; YouTube, Facebook, and Instagram go through a real
+/// authorization-code exchange
 /// (`app/api/social/[platform]/{connect,callback}/route.ts` +
-/// `lib/social/providers/google.ts`) and automatic refresh
-/// (`lib/connections/token-refresh.ts`).
+/// `lib/social/providers/{google,meta}.ts`) and automatic refresh where
+/// the vendor supports it (`lib/connections/token-refresh.ts` — Meta's
+/// Page-derived tokens don't expire under normal conditions, so Facebook
+/// and Instagram never actually hit the refresh path; see
+/// `lib/social/providers/meta.ts`'s doc comment).
+///
+/// For an INSTAGRAM row specifically: `platformAccountId` is the Instagram
+/// professional (business/creator) account's id, not a Facebook Page id —
+/// but `accessToken` is still the linked Facebook Page's access token,
+/// because that's what Instagram Graph API calls are authenticated with.
+/// There is no independent "Instagram access token".
 ///
 /// One row per platform today (`connectPlatform`/`disconnectPlatform` key
 /// off `platform` alone) — `userId` is a forward-compatible scoping column
@@ -285,7 +294,7 @@ enum ConnectionStatus {
 /// unpopulated and unenforced until then; do not start relying on it being
 /// set.
 ///
-/// `accessToken`/`refreshToken` are still plaintext — real Google tokens
+/// `accessToken`/`refreshToken` are still plaintext — real provider tokens
 /// are now stored here (not just Phase 1's mock placeholder strings), so
 /// this is a real, not hypothetical, gap. Encrypting these at rest is a
 /// flagged, deliberately out-of-scope follow-up (see the Phase 2B summary

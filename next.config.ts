@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
   // Next.js regardless of this list.
   allowedDevOrigins: [
     "192.168.1.*",
+    "panther-cymbal-gigahertz.ngrok-free.dev",
   ],
 };
 

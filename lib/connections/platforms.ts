@@ -36,4 +36,4 @@ export const PLATFORM_DESCRIPTIONS: Record<Platform, string> = {
  * Keep this list in sync with `PROVIDERS` in `lib/social/index.ts` by hand
  * when a new provider is added.
  */
-export const OAUTH_ENABLED_PLATFORMS: Platform[] = ["YOUTUBE"];
+export const OAUTH_ENABLED_PLATFORMS: Platform[] = ["YOUTUBE", "FACEBOOK", "INSTAGRAM"];
