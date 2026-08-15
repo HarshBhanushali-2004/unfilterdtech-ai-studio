@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { GeneratedInstagramContent } from "@/lib/ai"
+import { getTemplate } from "@/lib/template-renderer/registry"
 
 const apiContentTypeByContentType = {
   post: "instagram_post",
@@ -37,6 +38,10 @@ type GenerateApiResponse = {
   researchId?: string
   plannerId?: string
   visualPromptId?: string
+  carouselPlanId?: string | null
+  postPlanId?: string | null
+  storyPlanId?: string | null
+  reelPlanId?: string | null
   error?: string
 }
 
@@ -69,11 +74,19 @@ export function StudioWorkspace() {
   const [researchId, setResearchId] = React.useState<string | null>(null)
   const [plannerId, setPlannerId] = React.useState<string | null>(null)
   const [visualPromptId, setVisualPromptId] = React.useState<string | null>(null)
+  const [carouselPlanId, setCarouselPlanId] = React.useState<string | null>(null)
+  const [postPlanId, setPostPlanId] = React.useState<string | null>(null)
+  const [storyPlanId, setStoryPlanId] = React.useState<string | null>(null)
+  const [reelPlanId, setReelPlanId] = React.useState<string | null>(null)
 
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const [projectName, setProjectName] =
+    React.useState<string | null>(null)
+  // Phase 1C — resolved from the project's Brand Kit, never chosen here;
+  // "configured in Brand Settings" is the point (Core Requirement #17).
+  const [templateName, setTemplateName] =
     React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -83,6 +96,7 @@ export function StudioWorkspace() {
       if (!selectedProjectId) {
         if (!ignore) {
           setProjectName(null);
+          setTemplateName(null);
         }
         return;
       }
@@ -93,6 +107,7 @@ export function StudioWorkspace() {
         if (!res.ok) {
           if (!ignore) {
             setProjectName(null);
+            setTemplateName(null);
           }
           return;
         }
@@ -101,10 +116,12 @@ export function StudioWorkspace() {
 
         if (!ignore) {
           setProjectName(project.name);
+          setTemplateName(getTemplate(project.brandKit?.templateFamilyId).name);
         }
       } catch {
         if (!ignore) {
           setProjectName(null);
+          setTemplateName(null);
         }
       }
     }
@@ -156,6 +173,10 @@ export function StudioWorkspace() {
       setResearchId(payload.researchId ?? null)
       setPlannerId(payload.plannerId ?? null)
       setVisualPromptId(payload.visualPromptId ?? null)
+      setCarouselPlanId(payload.carouselPlanId ?? null)
+      setPostPlanId(payload.postPlanId ?? null)
+      setStoryPlanId(payload.storyPlanId ?? null)
+      setReelPlanId(payload.reelPlanId ?? null)
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -172,6 +193,10 @@ export function StudioWorkspace() {
     setResearchId(null)
     setPlannerId(null)
     setVisualPromptId(null)
+    setCarouselPlanId(null)
+    setPostPlanId(null)
+    setStoryPlanId(null)
+    setReelPlanId(null)
     setError(null)
   }
 
@@ -204,7 +229,7 @@ export function StudioWorkspace() {
                 📁
               </div>
 
-              <div>
+              <div className="flex-1">
                 <p className="text-sm text-muted-foreground">
                   Creating content for
                 </p>
@@ -213,6 +238,14 @@ export function StudioWorkspace() {
                   {projectName}
                 </p>
               </div>
+
+              {templateName && (
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Template</p>
+                  <p className="text-sm font-semibold">{templateName}</p>
+                  <p className="text-xs text-muted-foreground">Configured in Brand Settings</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -300,6 +333,10 @@ export function StudioWorkspace() {
               researchId={researchId}
               plannerId={plannerId}
               visualPromptId={visualPromptId}
+              carouselPlanId={carouselPlanId}
+              postPlanId={postPlanId}
+              storyPlanId={storyPlanId}
+              reelPlanId={reelPlanId}
               prompt={sourceValue}
               contentType={contentType}
               tone={tone}

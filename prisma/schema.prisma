@@ -20,6 +20,67 @@ enum ImageGenerationStatus {
   FAILED
 }
 
+/// Which kind of media a resolved carousel slide asset actually is. Distinct
+/// from `CarouselSlideMediaType` (the Carousel Planner's per-slide decision,
+/// which also allows NO_MEDIA) — a MediaAsset row only ever exists for a
+/// slide that actually resolved to a real file, so it's a strict subset.
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+/// The Carousel Planner's per-slide media decision (Phase 1 — AI Carousel
+/// Engine, see AGENTS.md). NO_MEDIA is valid here (a pure-text/quote slide)
+/// but never produces a MediaAsset row.
+enum CarouselSlideMediaType {
+  IMAGE
+  VIDEO
+  NO_MEDIA
+}
+
+/// Provenance of a MediaAsset — who/what actually produced the file, not its
+/// legal status (see MediaLicenseStatus for that). Deliberately provider-
+/// agnostic: GEMINI is one possible value, not a privileged one — see
+/// `lib/media-source/` and `lib/ai/image-providers/` for how new sources
+/// plug in without this enum needing to name every provider.
+enum MediaAssetSource {
+  USER_PROVIDED
+  SOURCE_MEDIA
+  GEMINI
+  LOCAL_AI
+  FREE_API
+  PAID_PROVIDER
+}
+
+/// Legal/rights status of a MediaAsset's underlying file — separate from
+/// `MediaAssetSource` because provenance and licensing are independent
+/// questions (e.g. SOURCE_MEDIA could be LICENSED, PUBLIC_DOMAIN, or
+/// RESTRICTED depending on where it came from). The Media Resolver must
+/// never persist a MediaAsset backed by RESTRICTED/UNKNOWN source media —
+/// see `lib/media-resolver/service.ts`.
+enum MediaLicenseStatus {
+  USER_PROVIDED
+  OFFICIAL_SOURCE
+  LICENSED
+  PUBLIC_DOMAIN
+  PERMITTED
+  UNKNOWN
+  RESTRICTED
+}
+
+/// Lifecycle of a CarouselSlideMedia row — broader than
+/// `ImageGenerationStatus` because resolving a slide's media can mean
+/// searching a source provider, not just generating an image, and a slide
+/// can legitimately need no media at all (SKIPPED / NO_MEDIA).
+enum MediaResolutionStatus {
+  PENDING
+  RESOLVING
+  RENDERING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
 /// Where a Creation sits in the review → publish workflow (Review page
 /// bottom action bar). No real social-publishing integration exists yet
 /// (no OAuth, no platform API calls) — PUBLISHED/SCHEDULED are a status
@@ -64,6 +125,34 @@ model Creation {
   visualPromptId String?
   visualPrompt   VisualPrompt? @relation(fields: [visualPromptId], references: [id], onDelete: SetNull)
 
+  /// Phase 1 — AI Carousel Engine (see AGENTS.md). Set only for CAROUSEL
+  /// creations made through the new Carousel Planner; older/non-carousel
+  /// creations leave this null and keep rendering `carousel` (the legacy
+  /// Content Generator's plain-text slides, see below) as before.
+  carouselPlanId String?
+  carouselPlan   CarouselPlan? @relation(fields: [carouselPlanId], references: [id], onDelete: SetNull)
+
+  /// Phase 1C — Unified Content Template System (see AGENTS.md). Set only
+  /// for POST/STORY/REEL creations made through their respective planners;
+  /// at most one of these three is ever set for a given Creation (matching
+  /// its `contentType`), mirroring `carouselPlanId`'s pattern exactly.
+  postPlanId String?
+  postPlan   PostPlan? @relation(fields: [postPlanId], references: [id], onDelete: SetNull)
+
+  storyPlanId String?
+  storyPlan   StoryPlan? @relation(fields: [storyPlanId], references: [id], onDelete: SetNull)
+
+  reelPlanId String?
+  reelPlan   ReelPlan? @relation(fields: [reelPlanId], references: [id], onDelete: SetNull)
+
+  /// The resolved soundtrack for a REEL (and, later, an audio-bearing
+  /// STORY) — see `lib/audio-resolver/`. Null whenever no licensed/
+  /// royalty-free audio provider is configured (true for every Creation
+  /// today — see AudioAsset's doc comment); the Review page must represent
+  /// that honestly rather than implying a track was attached.
+  audioAssetId String?
+  audioAsset   AudioAsset? @relation(fields: [audioAssetId], references: [id], onDelete: SetNull)
+
   title  String
   prompt String @db.Text
 
@@ -100,6 +189,11 @@ model Creation {
   @@index([researchId])
   @@index([plannerId])
   @@index([visualPromptId])
+  @@index([carouselPlanId])
+  @@index([postPlanId])
+  @@index([storyPlanId])
+  @@index([reelPlanId])
+  @@index([audioAssetId])
   @@index([createdAt])
   @@index([status])
 }
@@ -151,6 +245,10 @@ model Planner {
 
   creations     Creation[]
   visualPrompts VisualPrompt[]
+  carouselPlans CarouselPlan[]
+  postPlans     PostPlan[]
+  storyPlans    StoryPlan[]
+  reelPlans     ReelPlan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -243,6 +341,382 @@ model GeneratedImage {
 
   @@unique([visualPromptId, slot])
   @@index([visualPromptId])
+}
+
+/// A cached, structured Carousel Plan — the output of the Carousel Planner
+/// (Phase 1 — AI Carousel Engine, see AGENTS.md), the intelligence stage
+/// that turns Research + Planner strategy into an adaptive, story-driven
+/// slide sequence with a per-slide media decision (IMAGE/VIDEO/NO_MEDIA).
+/// Follows the exact same cross-creation cache pattern as `Planner` and
+/// `VisualPrompt`: keyed on (Planner, Brand Kit) via `planKey`, so an
+/// identical combination reuses the same plan instead of re-calling Gemini.
+/// `data` holds the full CarouselPlanObject shape defined by
+/// `carouselPlanObjectSchema` in `lib/ai/carousel-planner-schemas.ts` (the
+/// schema, not this column, is the structural source of truth) — it is the
+/// AI's *decisions*, not the resolved media itself; see `CarouselSlideMedia`
+/// for the per-slide resolved/rendered asset, which mirrors how
+/// `GeneratedImage` resolves `VisualPrompt`'s per-slot image prompts.
+model CarouselPlan {
+  id String @id @default(cuid())
+
+  planKey String @unique
+
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  slides    CarouselSlideMedia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plannerId])
+}
+
+/// A provider-agnostic media file — the "raw ingredient" behind a carousel
+/// slide (Phase 1 — AI Carousel Engine, see AGENTS.md). Deliberately not
+/// coupled to Gemini or any single provider: `source` records provenance
+/// (who produced it) and `licenseStatus` records legal standing (whether
+/// it's safe to use), tracked independently so a future real source-media
+/// provider can be added without reshaping this table. Like `GeneratedImage`
+/// and `BrandKit.logoUrl`, files are stored as data URLs directly in `url`
+/// (no object storage configured for this project — see CLAUDE.md).
+model MediaAsset {
+  id String @id @default(cuid())
+
+  type MediaType
+
+  source        MediaAssetSource
+  licenseStatus MediaLicenseStatus
+
+  url          String  @db.Text
+  thumbnailUrl String? @db.Text
+
+  width    Int?
+  height   Int?
+  /// Video only, in seconds. Always null for IMAGE assets.
+  duration Int?
+  mimeType String?
+
+  /// e.g. "gemini", "flux", "user-upload" — which concrete provider/path
+  /// produced this asset within its `source` category.
+  provider String?
+
+  /// Provenance details for SOURCE_MEDIA (e.g. { sourceUrl, author, license,
+  /// query }) — never populated for GEMINI/USER_PROVIDED assets.
+  attribution Json?
+  /// Free-form generation/search metadata (e.g. the generation prompt text
+  /// actually sent, or the search query and provider response id).
+  metadata Json?
+
+  slides      CarouselSlideMedia[]
+  postMedia   PostMedia[]
+  storyFrames StoryFrameMedia[]
+  reelScenes  ReelSceneMedia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// The resolved + rendered media for one slide of a CarouselPlan — one row
+/// per (carouselPlanId, slideOrder), directly mirroring `GeneratedImage`'s
+/// "one row per (visualPromptId, slot)" pattern but generalized: it points
+/// at a provider-agnostic `MediaAsset` (the raw ingredient) rather than
+/// embedding image bytes itself, and separately stores `renderedImageUrl` —
+/// the actual composited slide (template + media + Brand Kit) produced by
+/// the shared Template Renderer (`lib/template-renderer/`), which is what
+/// the Review page displays. `mediaType` mirrors the plan's per-slide decision
+/// so the UI can distinguish an IMAGE/VIDEO/NO_MEDIA slide without loading
+/// the related MediaAsset. Regenerating updates the same row rather than
+/// appending, same as GeneratedImage.
+model CarouselSlideMedia {
+  id String @id @default(cuid())
+
+  carouselPlanId String
+  carouselPlan   CarouselPlan @relation(fields: [carouselPlanId], references: [id], onDelete: Cascade)
+
+  /// Matches `data.slides[n].order` on the owning CarouselPlan.
+  slideOrder Int
+
+  mediaType CarouselSlideMediaType
+
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  /// The final composited slide (template + media + Brand Kit), as a data
+  /// URL — what the Review page actually renders. Null until RENDERING
+  /// completes; also null for a SKIPPED slide.
+  renderedImageUrl String? @db.Text
+  width            Int?
+  height           Int?
+
+  status MediaResolutionStatus @default(PENDING)
+
+  /// Which path actually resolved this slide — e.g. "USER_PROVIDED",
+  /// "SOURCE_MEDIA", "GENERATED_IMAGE", "GENERATED_IMAGE_FALLBACK" (the
+  /// plan asked for SOURCE_VIDEO/SOURCE_IMAGE but no permitted source was
+  /// available, so a generated image was used instead), "NO_MEDIA". Display/
+  /// debugging only — see Developer Details.
+  resolutionPath String?
+
+  errorMessage String? @db.Text
+  errorCode    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([carouselPlanId, slideOrder])
+  @@index([carouselPlanId])
+  @@index([mediaAssetId])
+}
+
+/// A cached, structured Single Post plan — Phase 1C's Instagram Post content
+/// type (see AGENTS.md), the same cross-creation cache pattern as
+/// `CarouselPlan`/`Planner`/`VisualPrompt`: keyed on (Planner, Brand Kit) via
+/// `planKey`. `data` holds the `PostPlanObject` shape defined by
+/// `postPlanObjectSchema` in `lib/ai/post-planner-schemas.ts`. A post is a
+/// single item, so its resolved media lives on `PostMedia` (a 1:1, unlike
+/// `CarouselSlideMedia`'s one-per-slide array).
+model PostPlan {
+  id String @id @default(cuid())
+
+  planKey String @unique
+
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  media     PostMedia?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plannerId])
+}
+
+/// The resolved + rendered media for a PostPlan — one row per PostPlan
+/// (unique `postPlanId`), directly mirroring `CarouselSlideMedia`'s shape
+/// minus the per-slide `slideOrder` (a post has exactly one item).
+model PostMedia {
+  id String @id @default(cuid())
+
+  postPlanId String   @unique
+  postPlan   PostPlan @relation(fields: [postPlanId], references: [id], onDelete: Cascade)
+
+  mediaType CarouselSlideMediaType
+
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  renderedImageUrl String? @db.Text
+  width            Int?
+  height           Int?
+
+  status         MediaResolutionStatus @default(PENDING)
+  resolutionPath String?
+
+  errorMessage String? @db.Text
+  errorCode    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([mediaAssetId])
+}
+
+/// A cached, structured Story plan — Phase 1C's Instagram Story content type
+/// (see AGENTS.md): an adaptive sequence of frames (Hook/Info/Detail/CTA or
+/// whatever the topic calls for — never a fixed count), each with its own
+/// media decision. Same cross-creation cache pattern as `CarouselPlan`.
+/// `data` holds the `StoryPlanObject` shape defined by
+/// `storyPlanObjectSchema` in `lib/ai/story-planner-schemas.ts`.
+model StoryPlan {
+  id String @id @default(cuid())
+
+  planKey String @unique
+
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  frames    StoryFrameMedia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plannerId])
+}
+
+/// The resolved + rendered media for one frame of a StoryPlan — one row per
+/// (storyPlanId, frameOrder), directly mirroring `CarouselSlideMedia`.
+model StoryFrameMedia {
+  id String @id @default(cuid())
+
+  storyPlanId String
+  storyPlan   StoryPlan @relation(fields: [storyPlanId], references: [id], onDelete: Cascade)
+
+  /// Matches `data.frames[n].order` on the owning StoryPlan.
+  frameOrder Int
+
+  mediaType CarouselSlideMediaType
+
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  renderedImageUrl String? @db.Text
+  width            Int?
+  height           Int?
+
+  status         MediaResolutionStatus @default(PENDING)
+  resolutionPath String?
+
+  errorMessage String? @db.Text
+  errorCode    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storyPlanId, frameOrder])
+  @@index([storyPlanId])
+  @@index([mediaAssetId])
+}
+
+/// A cached, structured Reel scene/shot plan — Phase 1C's Instagram Reel
+/// content type (see AGENTS.md). Deliberately architecture/planning only in
+/// this phase: no video composition exists (no FFmpeg, no video-generation
+/// provider — see AudioAsset's doc comment for the matching audio scope
+/// decision), so a ReelPlan produces a scene breakdown (purpose, duration,
+/// media decision, narration/on-screen text) and each scene renders a
+/// static storyboard preview (`ReelSceneMedia`), never a final .mp4. Same
+/// cross-creation cache pattern as `CarouselPlan`. `data` holds the
+/// `ReelPlanObject` shape defined by `reelPlanObjectSchema` in
+/// `lib/ai/reel-planner-schemas.ts`.
+model ReelPlan {
+  id String @id @default(cuid())
+
+  planKey String @unique
+
+  plannerId String?
+  planner   Planner? @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+
+  brandKitId String?
+
+  data Json
+
+  model String? @default("Gemini")
+
+  creations Creation[]
+  scenes    ReelSceneMedia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plannerId])
+}
+
+/// The resolved + rendered *storyboard preview* for one scene of a
+/// ReelPlan — one row per (reelPlanId, sceneOrder), mirroring
+/// `CarouselSlideMedia`. `renderedImageUrl` is a static PNG preview of the
+/// scene's visual treatment, never a video clip — see ReelPlan's doc
+/// comment.
+model ReelSceneMedia {
+  id String @id @default(cuid())
+
+  reelPlanId String
+  reelPlan   ReelPlan @relation(fields: [reelPlanId], references: [id], onDelete: Cascade)
+
+  /// Matches `data.scenes[n].order` on the owning ReelPlan.
+  sceneOrder Int
+
+  mediaType CarouselSlideMediaType
+
+  mediaAssetId String?
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  renderedImageUrl String? @db.Text
+  width            Int?
+  height           Int?
+
+  status         MediaResolutionStatus @default(PENDING)
+  resolutionPath String?
+
+  errorMessage String? @db.Text
+  errorCode    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([reelPlanId, sceneOrder])
+  @@index([reelPlanId])
+  @@index([mediaAssetId])
+}
+
+/// Provenance of an AudioAsset — mirrors `MediaAssetSource`'s reasoning but
+/// audio-specific: there is no audio-generation provider equivalent to
+/// Gemini image generation, so ORIGINAL_VIDEO_AUDIO exists to represent "the
+/// video clip's own soundtrack, do not attach anything else" (AGENTS.md
+/// Core Requirement #12's priority order) rather than a separate file.
+enum AudioAssetSource {
+  USER_PROVIDED
+  LICENSED_LIBRARY
+  ROYALTY_FREE
+  ORIGINAL_VIDEO_AUDIO
+  UNKNOWN
+}
+
+/// A provider-agnostic audio track — the Audio Resolver's output
+/// (`lib/audio-resolver/`, Phase 1C, AGENTS.md Core Requirement #11).
+/// **No licensed/trending-audio provider is registered today** (mirrors
+/// `lib/media-source/manager.ts`'s empty registry exactly) — this model and
+/// its resolver exist so a real provider can be added later without
+/// reshaping anything, but no row in this table is ever created by a fake
+/// or placeholder source; `Creation.audioAssetId` stays null until a real
+/// provider is configured. Never claim a track is "trending" unless a
+/// provider actually supplies that data — see `mood` below, which is an AI-
+/// selected creative direction (e.g. "cinematic", "energetic"), not a claim
+/// about any specific track.
+model AudioAsset {
+  id String @id @default(cuid())
+
+  source        AudioAssetSource
+  licenseStatus MediaLicenseStatus
+
+  provider String?
+  title    String?
+  artist   String?
+  /// AI-selected creative direction (e.g. "cinematic", "energetic",
+  /// "futuristic") — see the model doc comment; never a "trending" claim.
+  mood     String?
+  /// In seconds.
+  duration Int?
+
+  url String? @db.Text
+
+  attribution Json?
+  metadata    Json?
+
+  creations Creation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// Social platforms supported by the Connections system (Social Publishing
@@ -381,6 +855,19 @@ model BrandKit {
   primaryColor   String?
   secondaryColor String?
   accentColor    String?
+
+  /// Phase 1C — Unified Content Template System (see AGENTS.md). The
+  /// registered `TemplateFamily.id` (`lib/template-renderer/registry.ts`,
+  /// e.g. "editorial-tech") this brand's Carousel/Post/Story/Reel all
+  /// render with — one selection controls every format, so a brand never
+  /// has to pick a template per generation. Free-text (not a DB enum/FK):
+  /// templates are code-defined, not database-defined, matching how
+  /// `logoPosition`/`textStyle`/etc. below are already validated in the
+  /// application layer rather than by the schema. An id that doesn't match
+  /// any registered template (a stale value, or one whose template was
+  /// since removed) safely falls back to the default template — see
+  /// `getTemplate()`.
+  templateFamilyId String? @default("editorial-tech")
 
   keywords   String[]
   hashtags   String[]

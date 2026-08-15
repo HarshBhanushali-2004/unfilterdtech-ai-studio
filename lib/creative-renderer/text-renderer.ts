@@ -1,5 +1,7 @@
+import type { RenderContext2D } from "./types"
+
 /** Greedy word-wrap against the canvas's currently-set font — caller must set `ctx.font` first. */
-export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+export function wrapText(ctx: RenderContext2D, text: string, maxWidth: number): string[] {
   const trimmed = text.trim()
   if (!trimmed) return []
 
@@ -22,7 +24,7 @@ export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
 }
 
 /** Truncates a wrapped line list to `maxLines`, appending an ellipsis to the last kept line if anything was cut — this is what guarantees text never overflows its box. */
-function clampLines(ctx: CanvasRenderingContext2D, lines: string[], maxWidth: number, maxLines: number): string[] {
+function clampLines(ctx: RenderContext2D, lines: string[], maxWidth: number, maxLines: number): string[] {
   if (lines.length <= maxLines) return lines
 
   const kept = lines.slice(0, maxLines)
@@ -57,7 +59,7 @@ export type TextBlockOptions = {
  * Returns the total pixel height actually consumed, so callers can stack
  * blocks (headline → subtitle → CTA → footer) without overlap.
  */
-export function drawTextBlock(ctx: CanvasRenderingContext2D, options: TextBlockOptions): number {
+export function drawTextBlock(ctx: RenderContext2D, options: TextBlockOptions): number {
   const {
     text,
     x,
@@ -103,7 +105,7 @@ export function drawTextBlock(ctx: CanvasRenderingContext2D, options: TextBlockO
 
 /** Draws a rounded rectangle path — used for the CTA button and the canvas's own corner rounding. */
 export function roundedRectPath(
-  ctx: CanvasRenderingContext2D,
+  ctx: RenderContext2D,
   x: number,
   y: number,
   width: number,

@@ -11,9 +11,11 @@
     "verify:gemini-resilience": "node --experimental-transform-types --loader ./scripts/ts-relative-ext-loader.mjs scripts/verify-gemini-resilience.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@google/genai": "^2.15.0",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.4.0",
+    "@napi-rs/canvas": "^1.0.5",
     "@prisma/adapter-pg": "^7.9.0",
     "@prisma/client": "^7.9.0",
     "@radix-ui/react-alert-dialog": "1.1.21",

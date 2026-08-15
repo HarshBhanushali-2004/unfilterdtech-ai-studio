@@ -8,6 +8,7 @@ import { GeneratedContentSections } from "@/components/creations/generated-conte
 import { GeneratedImagesGallery } from "@/components/creations/generated-images-gallery";
 import { HashtagsCard } from "@/components/creations/hashtags-card";
 import { PostCard } from "@/components/creations/post-card";
+import { PostMediaPreview } from "@/components/creations/post-media-preview";
 import { ReviewActionBar } from "@/components/creations/review-action-bar";
 import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
 import { formatDate } from "@/lib/format-date";
@@ -63,6 +64,7 @@ export default async function CreationPage({
       research: true,
       planner: true,
       visualPrompt: true,
+      carouselPlan: true,
     },
   });
 
@@ -161,6 +163,9 @@ export default async function CreationPage({
             story,
             reel,
           }}
+          carouselPlanId={creation.carouselPlanId}
+          postPlanId={creation.postPlanId}
+          storyPlanId={creation.storyPlanId}
         />
       </div>
 
@@ -174,14 +179,20 @@ export default async function CreationPage({
             carousel={carousel}
             story={story}
             reel={reel}
+            carouselPlanId={creation.carouselPlanId}
+            storyPlanId={creation.storyPlanId}
+            reelPlanId={creation.reelPlanId}
             tabs={["caption", "carousel", "stories", "reel"]}
           />
         </section>
 
-        <section className="space-y-4 rounded-2xl border p-5 md:p-6">
-          <h2 className="text-lg font-semibold">Generated Images</h2>
-          <GeneratedImagesGallery visualPromptId={creation.visualPromptId} />
-        </section>
+        {/* For a Phase 1/1C creation made through the Carousel or Post Planner (carouselPlanId/postPlanId set), the rendered media shown in the "Carousel" tab or "Publishing Preview" section below is this creation's media — a second, separately-populated image gallery here would just be an empty, confusing duplicate (see AGENTS.md's Template Renderer). */}
+        {!creation.carouselPlanId && !creation.postPlanId && !creation.storyPlanId && !creation.reelPlanId && (
+          <section className="space-y-4 rounded-2xl border p-5 md:p-6">
+            <h2 className="text-lg font-semibold">Generated Images</h2>
+            <GeneratedImagesGallery visualPromptId={creation.visualPromptId} />
+          </section>
+        )}
 
         {hashtags.length > 0 && (
           <section className="space-y-4 rounded-2xl border p-5 md:p-6">
@@ -192,6 +203,7 @@ export default async function CreationPage({
 
         <section className="space-y-4 rounded-2xl border p-5 md:p-6">
           <h2 className="text-lg font-semibold">Publishing Preview</h2>
+          {creation.postPlanId && <PostMediaPreview postPlanId={creation.postPlanId} />}
           <PostCard caption={creation.caption} hashtags={hashtags} />
         </section>
 

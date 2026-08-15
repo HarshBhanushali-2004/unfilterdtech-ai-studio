@@ -56,6 +56,8 @@ const initialValues: BrandKitFormValues = {
   secondaryColor: "#2563EB",
   accentColor: "#EC4899",
 
+  templateFamilyId: "editorial-tech",
+
   keywords: "",
   hashtags: "",
   avoidWords: "",

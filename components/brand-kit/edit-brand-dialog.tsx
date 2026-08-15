@@ -68,6 +68,8 @@ function buildValues(
     secondaryColor: brand.secondaryColor ?? "#2563EB",
     accentColor: brand.accentColor ?? "#EC4899",
 
+    templateFamilyId: brand.templateFamilyId ?? "editorial-tech",
+
     keywords: brand.keywords.join(", "),
     hashtags: brand.hashtags.join(", "),
     avoidWords: brand.avoidWords.join(", "),

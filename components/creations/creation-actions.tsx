@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Download, Pencil, Copy as CopyAllIcon } from "lucide-react";
+import { Copy, Download, ImageDown, Pencil, Copy as CopyAllIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,12 @@ type CreationActionsProps = {
   creation: ExportableCreation & {
     id: string;
   };
+  /** Set only for a CAROUSEL creation made through Phase 1's AI Carousel Engine (see AGENTS.md) — shows the "Download Slides" action, which zips the rendered 1080×1350 PNGs from `GET /api/creations/[id]/carousel/download`. */
+  carouselPlanId?: string | null;
+  /** Set only for a POST creation made through Phase 1C's Post Planner (see AGENTS.md) — shows the "Download Image" action, `GET /api/creations/[id]/post/download`. */
+  postPlanId?: string | null;
+  /** Set only for a STORY creation made through Phase 1C's Story Planner (see AGENTS.md) — shows the "Download Frames" action, `GET /api/creations/[id]/story/download`. */
+  storyPlanId?: string | null;
 };
 
 const actionButtonClass = "h-9 gap-2 rounded-lg px-3.5";
@@ -32,7 +38,7 @@ const actionButtonClass = "h-9 gap-2 rounded-lg px-3.5";
  * these are frequently-used utilities, not the core approve/publish
  * workflow, but "frequently used" still means "no extra click to reach."
  */
-export function CreationActions({ creation }: CreationActionsProps) {
+export function CreationActions({ creation, carouselPlanId, postPlanId, storyPlanId }: CreationActionsProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -75,6 +81,21 @@ export function CreationActions({ creation }: CreationActionsProps) {
   function downloadAsMarkdown() {
     downloadMarkdown(slugify(creation.title), buildCreationMarkdown(creation));
     toast.success("Markdown file downloaded");
+  }
+
+  function downloadCarouselSlides() {
+    // A plain navigation (not fetch+blob) — the route's Content-Disposition
+    // header is enough for the browser to trigger a native download, same
+    // as clicking a direct link.
+    window.location.href = `/api/creations/${creation.id}/carousel/download`;
+  }
+
+  function downloadPostImage() {
+    window.location.href = `/api/creations/${creation.id}/post/download`;
+  }
+
+  function downloadStoryFrames() {
+    window.location.href = `/api/creations/${creation.id}/story/download`;
   }
 
   return (
@@ -125,6 +146,39 @@ export function CreationActions({ creation }: CreationActionsProps) {
           <Download className="h-4 w-4" />
           Download
         </Button>
+
+        {carouselPlanId && (
+          <Button
+            variant="outline"
+            className={actionButtonClass}
+            onClick={downloadCarouselSlides}
+          >
+            <ImageDown className="h-4 w-4" />
+            Download Slides
+          </Button>
+        )}
+
+        {postPlanId && (
+          <Button
+            variant="outline"
+            className={actionButtonClass}
+            onClick={downloadPostImage}
+          >
+            <ImageDown className="h-4 w-4" />
+            Download Image
+          </Button>
+        )}
+
+        {storyPlanId && (
+          <Button
+            variant="outline"
+            className={actionButtonClass}
+            onClick={downloadStoryFrames}
+          >
+            <ImageDown className="h-4 w-4" />
+            Download Frames
+          </Button>
+        )}
       </div>
 
       <EditCreationDialog

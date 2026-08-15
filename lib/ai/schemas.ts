@@ -47,4 +47,8 @@ export const generateContentInputSchema: z.ZodType<GenerateContentInput> = z.obj
   researchId: z.string().trim().min(1).optional(),
   plannerId: z.string().trim().min(1).optional(),
   visualPromptId: z.string().trim().min(1).optional(),
+  carouselPlanId: z.string().trim().min(1).optional(),
+  postPlanId: z.string().trim().min(1).optional(),
+  storyPlanId: z.string().trim().min(1).optional(),
+  reelPlanId: z.string().trim().min(1).optional(),
 })

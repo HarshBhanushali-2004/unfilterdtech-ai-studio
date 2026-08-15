@@ -18,6 +18,15 @@ export async function GET(
       where: {
         id,
       },
+      // brandKit is an additive include — existing consumers destructuring
+      // just .name/.id are unaffected. Phase 1C: the Studio surfaces the
+      // brand's selected template ("Configured in Brand Settings") without
+      // a second round trip.
+      include: {
+        brandKit: {
+          select: { id: true, name: true, templateFamilyId: true },
+        },
+      },
     });
 
     if (!project) {

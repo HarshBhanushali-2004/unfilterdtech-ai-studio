@@ -78,6 +78,9 @@ export const BrandKitSchema = z.object({
 
   accentColor: z.string().trim().optional(),
 
+  /** Phase 1C — Unified Content Template System (see AGENTS.md). A registered `TemplateFamily.id` (`lib/template-renderer/registry.ts`) — not validated against the registry here (templates are code-defined, not database-defined); an unknown id safely falls back to the default template at render time instead of failing validation. */
+  templateFamilyId: z.string().trim().default("editorial-tech"),
+
   keywords: stringArray,
 
   hashtags: stringArray,

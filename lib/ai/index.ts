@@ -40,6 +40,26 @@ export {
 export { buildVisualPromptPrompt } from "./visual-prompt-prompt-builder"
 export { generateVisualPrompt } from "./visual-prompt"
 
+export {
+  carouselSlideMediaTypes,
+  carouselPlanSlideSchema,
+  carouselPlanObjectSchema,
+} from "./carousel-planner-schemas"
+export { buildCarouselPlannerPrompt } from "./carousel-planner-prompt-builder"
+export { generateCarouselPlan } from "./carousel-planner"
+
+export { postPlanObjectSchema } from "./post-planner-schemas"
+export { buildPostPlannerPrompt } from "./post-planner-prompt-builder"
+export { generatePostPlan } from "./post-planner"
+
+export { storyFrameMediaTypes, storyFrameSchema, storyPlanObjectSchema } from "./story-planner-schemas"
+export { buildStoryPlannerPrompt } from "./story-planner-prompt-builder"
+export { generateStoryPlan } from "./story-planner"
+
+export { reelSceneMediaTypes, reelSceneSchema, reelPlanObjectSchema } from "./reel-planner-schemas"
+export { buildReelPlannerPrompt } from "./reel-planner-prompt-builder"
+export { generateReelPlan } from "./reel-planner"
+
 export type {
   AIContentType,
   AISourceType,
@@ -64,3 +84,15 @@ export type {
   ReelProductionPlan,
   VisualPromptObject,
 } from "./visual-prompt-schemas"
+
+export type {
+  CarouselSlideMediaTypeValue,
+  CarouselPlanSlide,
+  CarouselPlanObject,
+} from "./carousel-planner-schemas"
+
+export type { PostPlanObject } from "./post-planner-schemas"
+
+export type { StoryPlanFrame, StoryPlanObject } from "./story-planner-schemas"
+
+export type { ReelPlanScene, ReelPlanObject } from "./reel-planner-schemas"

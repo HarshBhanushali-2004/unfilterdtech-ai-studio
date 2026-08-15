@@ -34,6 +34,10 @@ type OutputPanelProps = {
   researchId?: string | null
   plannerId?: string | null
   visualPromptId?: string | null
+  carouselPlanId?: string | null
+  postPlanId?: string | null
+  storyPlanId?: string | null
+  reelPlanId?: string | null
   prompt?: string
   contentType?: string
   tone?: string
@@ -50,6 +54,10 @@ export function OutputPanel({
   researchId,
   plannerId,
   visualPromptId,
+  carouselPlanId,
+  postPlanId,
+  storyPlanId,
+  reelPlanId,
   prompt,
   contentType,
   tone,
@@ -90,6 +98,10 @@ export function OutputPanel({
           researchId: researchId ?? undefined,
           plannerId: plannerId ?? undefined,
           visualPromptId: visualPromptId ?? undefined,
+          carouselPlanId: carouselPlanId ?? undefined,
+          postPlanId: postPlanId ?? undefined,
+          storyPlanId: storyPlanId ?? undefined,
+          reelPlanId: reelPlanId ?? undefined,
           title: title.trim() || defaultTitle,
           prompt,
           contentType,

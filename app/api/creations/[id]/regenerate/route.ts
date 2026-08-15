@@ -16,8 +16,22 @@ import { getOrCreatePlanner } from "@/lib/planner/service";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateResearch } from "@/lib/research/service";
 import { getOrCreateVisualPrompt } from "@/lib/visual-prompt/service";
+import { getOrCreateCarouselPlan } from "@/lib/carousel-plan/service";
+import { generateMediaForCarouselPlan } from "@/lib/carousel-plan/generate-media-for-plan";
+import { getOrCreatePostPlan } from "@/lib/post-plan/service";
+import { generateMediaForPostPlan } from "@/lib/post-plan/generate-media-for-plan";
+import { getOrCreateStoryPlan } from "@/lib/story-plan/service";
+import { generateMediaForStoryPlan } from "@/lib/story-plan/generate-media-for-plan";
+import { getOrCreateReelPlan } from "@/lib/reel-plan/service";
+import { generateMediaForReelPlan } from "@/lib/reel-plan/generate-media-for-plan";
+import { resolveAudioForReel } from "@/lib/audio-resolver/service";
 
 export const runtime = "nodejs";
+// See app/api/creations/route.ts's matching comment — Regenerate reruns the
+// full pipeline (Research → Planner → Carousel Plan → per-slide media) and
+// is even more likely to exceed the default serverless timeout than a
+// first save.
+export const maxDuration = 120;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -115,12 +129,88 @@ export async function POST(_request: Request, { params }: RouteContext) {
       creation.projectId
     );
 
+    // Carousel Plan step — Phase 1's AI Carousel Engine (see AGENTS.md).
+    // Only for CAROUSEL creations that already went through the new
+    // pipeline (have a carouselPlanId); a pre-Phase-1 CAROUSEL creation has
+    // none and keeps falling through to the legacy per-slide image
+    // regeneration below, same as before this feature existed.
+    const carouselPlan =
+      creation.contentType === "CAROUSEL" && creation.carouselPlanId
+        ? await getOrCreateCarouselPlan(
+            {
+              topic: creation.prompt,
+              plannerId: planner.id,
+              planner: planner.data,
+              research: research.data,
+              brandKitId,
+              brandContext,
+            },
+            { forceRegenerate: true }
+          )
+        : null;
+
+    // Post Plan step — Phase 1C's Instagram Single Post content type (see
+    // AGENTS.md). Same "only for creations already on the new pipeline"
+    // reasoning as the Carousel Plan branch above.
+    const postPlan =
+      creation.contentType === "POST" && creation.postPlanId
+        ? await getOrCreatePostPlan(
+            {
+              topic: creation.prompt,
+              plannerId: planner.id,
+              planner: planner.data,
+              research: research.data,
+              brandKitId,
+              brandContext,
+            },
+            { forceRegenerate: true }
+          )
+        : null;
+
+    // Story Plan step — Phase 1C's Instagram Story content type (see
+    // AGENTS.md). Same reasoning as the Carousel/Post Plan branches above.
+    const storyPlan =
+      creation.contentType === "STORY" && creation.storyPlanId
+        ? await getOrCreateStoryPlan(
+            {
+              topic: creation.prompt,
+              plannerId: planner.id,
+              planner: planner.data,
+              research: research.data,
+              brandKitId,
+              brandContext,
+            },
+            { forceRegenerate: true }
+          )
+        : null;
+
+    // Reel Plan step — Phase 1C's Instagram Reel content type (see
+    // AGENTS.md). Same reasoning as the other Plan branches above.
+    const reelPlan =
+      creation.contentType === "REEL" && creation.reelPlanId
+        ? await getOrCreateReelPlan(
+            {
+              topic: creation.prompt,
+              plannerId: planner.id,
+              planner: planner.data,
+              research: research.data,
+              brandKitId,
+              brandContext,
+            },
+            { forceRegenerate: true }
+          )
+        : null;
+
     await prisma.creation.update({
       where: { id },
       data: {
         researchId: research.id,
         plannerId: planner.id,
         visualPromptId: visualPrompt.id,
+        carouselPlanId: carouselPlan?.id ?? creation.carouselPlanId,
+        postPlanId: postPlan?.id ?? creation.postPlanId,
+        storyPlanId: storyPlan?.id ?? creation.storyPlanId,
+        reelPlanId: reelPlan?.id ?? creation.reelPlanId,
         caption: outputValidation.data.caption,
         hashtags: outputValidation.data.hashtags,
         carousel: outputValidation.data.carousel,
@@ -131,16 +221,71 @@ export async function POST(_request: Request, { params }: RouteContext) {
       },
     });
 
-    // Images last — every text field a reviewer looks at first is already
-    // saved even if image generation runs long or a provider call fails.
-    const parsedVisualPrompt = visualPromptObjectSchema.safeParse(visualPrompt.data);
-    if (parsedVisualPrompt.success) {
-      await generateImagesForCreation({
-        visualPromptId: visualPrompt.id,
-        visualPrompt: parsedVisualPrompt.data,
-        contentType: creation.contentType,
+    // Media/images last — every text field a reviewer looks at first is
+    // already saved even if generation runs long or a provider call fails.
+    if (carouselPlan) {
+      // New system is the source of truth for CAROUSEL — regenerate every
+      // slide's resolved media + rendered image, skip the legacy
+      // per-VisualPrompt-slot image path entirely (it would just burn
+      // duplicate Gemini image calls no Review page surface shows anymore).
+      const project = creation.projectId
+        ? await prisma.project.findUnique({ where: { id: creation.projectId }, include: { brandKit: true } })
+        : null;
+
+      await generateMediaForCarouselPlan({
+        carouselPlanId: carouselPlan.id,
+        plan: carouselPlan.data,
+        brandKit: project?.brandKit ?? null,
         forceRegenerate: true,
       });
+    } else if (postPlan) {
+      // New system is the source of truth for POST — same reasoning as the
+      // CAROUSEL branch above.
+      const project = creation.projectId
+        ? await prisma.project.findUnique({ where: { id: creation.projectId }, include: { brandKit: true } })
+        : null;
+
+      await generateMediaForPostPlan({
+        postPlanId: postPlan.id,
+        plan: postPlan.data,
+        brandKit: project?.brandKit ?? null,
+        forceRegenerate: true,
+      });
+    } else if (storyPlan) {
+      const project = creation.projectId
+        ? await prisma.project.findUnique({ where: { id: creation.projectId }, include: { brandKit: true } })
+        : null;
+
+      await generateMediaForStoryPlan({
+        storyPlanId: storyPlan.id,
+        plan: storyPlan.data,
+        brandKit: project?.brandKit ?? null,
+        forceRegenerate: true,
+      });
+    } else if (reelPlan) {
+      const project = creation.projectId
+        ? await prisma.project.findUnique({ where: { id: creation.projectId }, include: { brandKit: true } })
+        : null;
+
+      await generateMediaForReelPlan({
+        reelPlanId: reelPlan.id,
+        plan: reelPlan.data,
+        brandKit: project?.brandKit ?? null,
+        forceRegenerate: true,
+      });
+
+      const { audioAssetId } = await resolveAudioForReel(reelPlan.id, reelPlan.data);
+      await prisma.creation.update({ where: { id }, data: { audioAssetId } });
+    } else {
+      const parsedVisualPrompt = visualPromptObjectSchema.safeParse(visualPrompt.data);
+      if (parsedVisualPrompt.success) {
+        await generateImagesForCreation({
+          visualPromptId: visualPrompt.id,
+          visualPrompt: parsedVisualPrompt.data,
+          contentType: creation.contentType,
+          forceRegenerate: true,
+        });
+      }
     }
 
     return NextResponse.json({ success: true, id });
