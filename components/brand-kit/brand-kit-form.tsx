@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { ImageOff, Upload } from "lucide-react";
+import { Check, ImageOff, Upload } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ import {
   RENDERER_FONTS,
   TEXT_STYLES,
 } from "@/lib/creative-renderer";
+import { listTemplates } from "@/lib/template-renderer/registry";
+import { cn } from "@/lib/utils";
 
 export type BrandKitFormValues = {
   name: string;
@@ -58,6 +60,8 @@ export type BrandKitFormValues = {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+
+  templateFamilyId: string;
 
   keywords: string;
   hashtags: string;
@@ -102,6 +106,140 @@ const ICON_STYLE_LABELS: Record<string, string> = {
   duotone: "Duotone",
 };
 
+/**
+ * Small CSS preview of a template family, using this brand's own colors —
+ * not a real generated AI asset (AGENTS.md Core Requirement #18: "It does
+ * NOT need to be a real generated AI asset ... but the preview should
+ * accurately communicate the visual identity"). Mirrors the carousel
+ * layout's actual page-background resolution logic
+ * (`lib/template-renderer/render-frame.ts`) so "auto"/"brand-primary"
+ * previews as this brand's real primary color, not a placeholder.
+ */
+function TemplatePreviewCard({
+  name,
+  description,
+  backgroundColor,
+  accentColor,
+  selected,
+  onSelect,
+}: {
+  id: string;
+  name: string;
+  description: string;
+  backgroundColor: string;
+  accentColor: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const isDark = (() => {
+    const match = backgroundColor.trim().match(/^#?([0-9a-f]{6})$/i);
+    if (!match) return true;
+    const hex = match[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return 0.299 * r + 0.587 * g + 0.114 * b < 140;
+  })();
+  const textColor = isDark ? "#FFFFFF" : "#14151A";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "relative overflow-hidden rounded-xl border-2 text-left transition-colors",
+        selected ? "border-violet-600" : "border-transparent hover:border-border"
+      )}
+    >
+      <div
+        className="flex aspect-[4/5] flex-col justify-between p-4"
+        style={{ backgroundColor }}
+      >
+        <span
+          className="w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
+          style={{ backgroundColor: accentColor, color: "#FFFFFF" }}
+        >
+          Preview
+        </span>
+        <div className="space-y-1.5">
+          <div className="h-2.5 w-4/5 rounded-full opacity-90" style={{ backgroundColor: textColor }} />
+          <div className="h-2.5 w-3/5 rounded-full opacity-90" style={{ backgroundColor: textColor }} />
+        </div>
+      </div>
+
+      {selected && (
+        <div className="absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-violet-600 text-white">
+          <Check className="size-3.5" />
+        </div>
+      )}
+
+      <div className="border-t bg-card p-3">
+        <p className="text-sm font-semibold">{name}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Logos are stored as data URLs directly on the Brand Kit row (no object
+ * storage configured for this project — see CLAUDE.md) and submitted
+ * through the `createBrandKit`/`updateBrandKit` Server Actions, which Next.js
+ * caps at a 1MB total request body by default. An un-resized upload (a
+ * phone photo picked by mistake, a retina-exported PNG, etc.) can blow past
+ * that on its own before base64 encoding even adds its ~33% overhead — and
+ * there are up to 5 logo fields that can all be populated at once. Capping
+ * the raster size here (logos only ever render at a small fraction of a
+ * template canvas — see `lib/template-renderer/render-frame.ts`'s
+ * `branding` element, ~14-20% of the shorter edge) fixes the actual size
+ * problem at its source instead of just raising the Server Action limit to
+ * paper over it.
+ */
+const MAX_LOGO_DIMENSION = 512;
+
+async function resizeLogoFile(file: File): Promise<string> {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Failed to read file."));
+    };
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Failed to decode image."));
+      img.src = rawDataUrl;
+    });
+
+    const scale = Math.min(1, MAX_LOGO_DIMENSION / Math.max(image.width, image.height));
+    // Already small enough (or dimensions couldn't be read, e.g. some SVGs)
+    // — no need to re-encode through canvas.
+    if (!Number.isFinite(scale) || scale >= 1) return rawDataUrl;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return rawDataUrl;
+
+    // PNG, not JPEG — logos routinely rely on transparency (watermark
+    // placement in particular), and a lossy re-encode would degrade a
+    // sharp brand mark for no size benefit worth the tradeoff at this scale.
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    // Any decode failure falls back to the untouched upload rather than
+    // blocking it outright — logos are almost always small enough on their
+    // own that only unusually large uploads actually needed the resize.
+    return rawDataUrl;
+  }
+}
+
 function LogoUploadField({
   label,
   value,
@@ -116,11 +254,7 @@ function LogoUploadField({
   function handleFile(file: File | undefined) {
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      onChange(typeof reader.result === "string" ? reader.result : "");
-    };
-    reader.readAsDataURL(file);
+    void resizeLogoFile(file).then(onChange);
   }
 
   return (
@@ -244,6 +378,39 @@ export function BrandKitForm({
             }
             placeholder="Describe your brand..."
           />
+        </div>
+      </div>
+
+      {/* Visual Template */}
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">
+          Visual Template
+        </h3>
+
+        <p className="text-sm text-muted-foreground">
+          Controls the design of every generated Carousel, Post, Story, and Reel for this brand — configured once here, not chosen per generation.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+          {listTemplates().map((template) => {
+            const bg = template.formats.carousel.background.color;
+            const backgroundColor =
+              bg === "auto" || bg === "brand-primary" ? values.primaryColor || "#111827" : bg;
+
+            return (
+              <TemplatePreviewCard
+                key={template.id}
+                id={template.id}
+                name={template.name}
+                description={template.description}
+                backgroundColor={backgroundColor}
+                accentColor={values.accentColor || "#7C3AED"}
+                selected={values.templateFamilyId === template.id}
+                onSelect={() => onChange("templateFamilyId", template.id)}
+              />
+            );
+          })}
         </div>
       </div>
 
