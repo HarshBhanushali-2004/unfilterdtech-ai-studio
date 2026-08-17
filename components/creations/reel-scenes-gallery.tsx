@@ -29,6 +29,10 @@ const MAX_POLL_MS = 120_000;
 export function ReelScenesGallery({ reelPlanId, sceneCount }: ReelScenesGalleryProps) {
   const [scenes, setScenes] = React.useState<ReelSceneMediaDTO[] | null>(null);
   const [openIndex, setOpenIndex] = React.useState<number | null>(null);
+  // See `CarouselSlidesGallery`'s matching state (Phase 1C.6): prefer the
+  // plan's own authoritative scene count over the `sceneCount` prop, which
+  // is sourced from `Creation.reel` and can drift from the plan.
+  const [planSceneCount, setPlanSceneCount] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -45,6 +49,9 @@ export function ReelScenesGallery({ reelPlanId, sceneCount }: ReelScenesGalleryP
           (a: ReelSceneMediaDTO, b: ReelSceneMediaDTO) => a.sceneOrder - b.sceneOrder
         );
         setScenes(sorted);
+        if (typeof json.totalScenes === "number" && json.totalScenes > 0) {
+          setPlanSceneCount(json.totalScenes);
+        }
 
         const stillGenerating =
           sorted.length < sceneCount || sorted.some((scene) => !TERMINAL_STATUSES.has(scene.status));
@@ -106,13 +113,32 @@ export function ReelScenesGallery({ reelPlanId, sceneCount }: ReelScenesGalleryP
     );
   }
 
-  const viewableScenes = scenes.filter((scene) => scene.status === "COMPLETED" && scene.renderedImageUrl);
-  const lightboxItems: LightboxItem[] = viewableScenes.map((scene) => ({
-    id: scene.id,
-    imageUrl: scene.renderedImageUrl!,
-    label: `Scene ${scene.sceneOrder}`,
-    badgeLabel: "Storyboard preview",
-  }));
+  // See `CarouselSlidesGallery`'s matching comment (Phase 1C.6): the
+  // lightbox counter/navigation must reflect the ReelPlan's actual total,
+  // not just the scenes that finished rendering.
+  const totalScenes = planSceneCount ?? sceneCount;
+  const lightboxItems: LightboxItem[] = Array.from({ length: totalScenes }, (_, index) => {
+    const order = index + 1;
+    const scene = scenes.find((s) => s.sceneOrder === order);
+    const label = `Scene ${order}`;
+    if (scene?.status === "COMPLETED" && scene.renderedImageUrl) {
+      return {
+        id: scene.id,
+        label,
+        badgeLabel: "Storyboard preview",
+        available: true,
+        imageUrl: scene.renderedImageUrl,
+      };
+    }
+    return {
+      id: scene?.id ?? `pending-scene-${order}`,
+      label,
+      badgeLabel: "Storyboard preview",
+      available: false,
+      errorCode: scene?.errorCode,
+      errorMessage: scene?.errorMessage,
+    };
+  });
 
   return (
     <div className="space-y-4">
@@ -127,7 +153,7 @@ export function ReelScenesGallery({ reelPlanId, sceneCount }: ReelScenesGalleryP
                   <button
                     type="button"
                     className="block h-full w-full cursor-zoom-in"
-                    onClick={() => setOpenIndex(viewableScenes.findIndex((s) => s.id === scene.id))}
+                    onClick={() => setOpenIndex(scene.sceneOrder - 1)}
                     aria-label={`Open Scene ${scene.sceneOrder} preview`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -51,6 +51,11 @@ const MAX_POLL_MS = 120_000;
 export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSlidesGalleryProps) {
   const [slides, setSlides] = React.useState<CarouselSlideMediaDTO[] | null>(null);
   const [openIndex, setOpenIndex] = React.useState<number | null>(null);
+  // The plan's own authoritative slide count, once the API has returned it —
+  // preferred over the `slideCount` prop (sourced from `Creation.carousel`,
+  // a separately-generated caption array that can drift from how many
+  // slides the plan actually rendered) for the lightbox counter/navigation.
+  const [planSlideCount, setPlanSlideCount] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -67,6 +72,9 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
           (a: CarouselSlideMediaDTO, b: CarouselSlideMediaDTO) => a.slideOrder - b.slideOrder
         );
         setSlides(sorted);
+        if (typeof json.totalSlides === "number" && json.totalSlides > 0) {
+          setPlanSlideCount(json.totalSlides);
+        }
 
         const stillGenerating =
           sorted.length < slideCount || sorted.some((slide) => !TERMINAL_STATUSES.has(slide.status));
@@ -106,16 +114,35 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
     );
   }
 
-  // Only completed slides have anything to view fullscreen — prev/next in
-  // the lightbox cycles through these, not the raw slide list, so it never
-  // lands on a slide with no image (see `MediaLightbox`'s doc comment).
-  const viewableSlides = slides.filter((slide) => slide.status === "COMPLETED" && slide.renderedImageUrl);
-  const lightboxItems: LightboxItem[] = viewableSlides.map((slide) => ({
-    id: slide.id,
-    imageUrl: slide.renderedImageUrl!,
-    label: `Slide ${slide.slideOrder}`,
-    badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(slide.mediaType, slide.resolutionPath)]?.label ?? "Image",
-  }));
+  // The lightbox's counter/navigation must reflect the plan's actual slide
+  // count, not just how many have finished rendering — building this from
+  // the plan's own total (one entry per `slideOrder` 1..total) instead of
+  // filtering to viewable slides fixes the "Slide 3 / 2" bug (Phase 1C.6):
+  // a failed/still-generating slide keeps its original position and shows
+  // `MediaUnavailable`, it never gets skipped or renumbered around.
+  const totalSlides = planSlideCount ?? slideCount;
+  const lightboxItems: LightboxItem[] = Array.from({ length: totalSlides }, (_, index) => {
+    const order = index + 1;
+    const slide = slides.find((s) => s.slideOrder === order);
+    const label = `Slide ${order}`;
+    if (slide?.status === "COMPLETED" && slide.renderedImageUrl) {
+      return {
+        id: slide.id,
+        label,
+        badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(slide.mediaType, slide.resolutionPath)]?.label ?? "Image",
+        available: true,
+        imageUrl: slide.renderedImageUrl,
+      };
+    }
+    return {
+      id: slide?.id ?? `pending-slide-${order}`,
+      label,
+      badgeLabel: "Image",
+      available: false,
+      errorCode: slide?.errorCode,
+      errorMessage: slide?.errorMessage,
+    };
+  });
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
@@ -135,7 +162,7 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
                 <button
                   type="button"
                   className="block h-full w-full cursor-zoom-in"
-                  onClick={() => setOpenIndex(viewableSlides.findIndex((s) => s.id === slide.id))}
+                  onClick={() => setOpenIndex(slide.slideOrder - 1)}
                   aria-label={`Open Slide ${slide.slideOrder} preview`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}

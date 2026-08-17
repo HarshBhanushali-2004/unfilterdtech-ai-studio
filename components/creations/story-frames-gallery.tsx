@@ -35,6 +35,10 @@ const MAX_POLL_MS = 120_000;
 export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalleryProps) {
   const [frames, setFrames] = React.useState<StoryFrameMediaDTO[] | null>(null);
   const [openIndex, setOpenIndex] = React.useState<number | null>(null);
+  // See `CarouselSlidesGallery`'s matching state (Phase 1C.6): prefer the
+  // plan's own authoritative frame count over the `frameCount` prop, which
+  // is sourced from `Creation.story` and can drift from the plan.
+  const [planFrameCount, setPlanFrameCount] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -51,6 +55,9 @@ export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalle
           (a: StoryFrameMediaDTO, b: StoryFrameMediaDTO) => a.frameOrder - b.frameOrder
         );
         setFrames(sorted);
+        if (typeof json.totalFrames === "number" && json.totalFrames > 0) {
+          setPlanFrameCount(json.totalFrames);
+        }
 
         const stillGenerating =
           sorted.length < frameCount || sorted.some((frame) => !TERMINAL_STATUSES.has(frame.status));
@@ -90,13 +97,32 @@ export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalle
     );
   }
 
-  const viewableFrames = frames.filter((frame) => frame.status === "COMPLETED" && frame.renderedImageUrl);
-  const lightboxItems: LightboxItem[] = viewableFrames.map((frame) => ({
-    id: frame.id,
-    imageUrl: frame.renderedImageUrl!,
-    label: `Frame ${frame.frameOrder}`,
-    badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(frame.mediaType, frame.resolutionPath)]?.label ?? "Image",
-  }));
+  // See `CarouselSlidesGallery`'s matching comment (Phase 1C.6): the
+  // lightbox counter/navigation must reflect the StoryPlan's actual total,
+  // not just the frames that finished rendering.
+  const totalFrames = planFrameCount ?? frameCount;
+  const lightboxItems: LightboxItem[] = Array.from({ length: totalFrames }, (_, index) => {
+    const order = index + 1;
+    const frame = frames.find((f) => f.frameOrder === order);
+    const label = `Frame ${order}`;
+    if (frame?.status === "COMPLETED" && frame.renderedImageUrl) {
+      return {
+        id: frame.id,
+        label,
+        badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(frame.mediaType, frame.resolutionPath)]?.label ?? "Image",
+        available: true,
+        imageUrl: frame.renderedImageUrl,
+      };
+    }
+    return {
+      id: frame?.id ?? `pending-frame-${order}`,
+      label,
+      badgeLabel: "Image",
+      available: false,
+      errorCode: frame?.errorCode,
+      errorMessage: frame?.errorMessage,
+    };
+  });
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
@@ -112,7 +138,7 @@ export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalle
                 <button
                   type="button"
                   className="block h-full w-full cursor-zoom-in"
-                  onClick={() => setOpenIndex(viewableFrames.findIndex((f) => f.id === frame.id))}
+                  onClick={() => setOpenIndex(frame.frameOrder - 1)}
                   aria-label={`Open Frame ${frame.frameOrder} preview`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}

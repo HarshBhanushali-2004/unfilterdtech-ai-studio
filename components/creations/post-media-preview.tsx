@@ -76,7 +76,15 @@ export function PostMediaPreview({ postPlanId }: { postPlanId: string }) {
   const badge = MEDIA_TYPE_BADGE[displayedMediaType(media.mediaType, media.resolutionPath)];
   const isViewable = media.status === "COMPLETED" && media.renderedImageUrl;
   const lightboxItems: LightboxItem[] = isViewable
-    ? [{ id: media.id, imageUrl: media.renderedImageUrl!, label: "", badgeLabel: badge?.label ?? "Image" }]
+    ? [
+        {
+          id: media.id,
+          imageUrl: media.renderedImageUrl!,
+          label: "",
+          badgeLabel: badge?.label ?? "Image",
+          available: true,
+        },
+      ]
     : [];
 
   return (

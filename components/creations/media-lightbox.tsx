@@ -7,15 +7,31 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { MediaFailedState } from "./media-failed-state";
 
-export type LightboxItem = {
+type LightboxItemBase = {
   id: string;
-  imageUrl: string;
   /** e.g. "Slide 3", "Frame 2", "Scene 5" — omitted (empty) for Post, which has only one item. */
   label: string;
   /** e.g. "Image", "Video", "Text", "Storyboard preview". */
   badgeLabel: string;
 };
+
+/**
+ * One logical slot in the gallery's original sequence — every slide/frame/
+ * scene, not just the ones with viewable media (Phase 1C.6: the counter and
+ * navigation must reflect the full `CarouselPlan`/`StoryPlan`/`ReelPlan`
+ * slot count, never just the subset that finished rendering). A slot with no
+ * media (still generating, or `FAILED`) still occupies its original
+ * position and renders `MediaFailedState` in place of the image.
+ */
+export type LightboxItem =
+  | (LightboxItemBase & { available: true; imageUrl: string })
+  | (LightboxItemBase & {
+      available: false;
+      errorCode?: string | null;
+      errorMessage?: string | null;
+    });
 
 type MediaLightboxProps = {
   items: LightboxItem[];
@@ -42,6 +58,12 @@ const SCALE_STEP = 0.5;
  * static frame preview, never a video player (see `ReelScenesGallery`'s
  * honesty banner); this component has no video-specific affordance to
  * accidentally imply otherwise.
+ *
+ * `items` must be the gallery's *full* logical sequence (one entry per
+ * slide/frame/scene, in original order), not just the ones with media —
+ * see `LightboxItem`. The counter always reads `items.length`, so callers
+ * are responsible for padding out unavailable slots rather than filtering
+ * them away, or the count silently drifts from the real total again.
  */
 export function MediaLightbox({ items, openIndex, onOpenIndexChange }: MediaLightboxProps) {
   const [scale, setScale] = React.useState(1);
@@ -100,38 +122,40 @@ export function MediaLightbox({ items, openIndex, onOpenIndexChange }: MediaLigh
             </Badge>
           </div>
 
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              disabled={scale <= MIN_SCALE}
-              onClick={() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP))}
-              aria-label="Zoom out"
-            >
-              <ZoomOut />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              disabled={scale >= MAX_SCALE}
-              onClick={() => setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP))}
-              aria-label="Zoom in"
-            >
-              <ZoomIn />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              disabled={scale === 1}
-              onClick={() => setScale(1)}
-              aria-label="Reset zoom to fit"
-            >
-              <Maximize2 />
-            </Button>
-          </div>
+          {current.available && (
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                disabled={scale <= MIN_SCALE}
+                onClick={() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP))}
+                aria-label="Zoom out"
+              >
+                <ZoomOut />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                disabled={scale >= MAX_SCALE}
+                onClick={() => setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP))}
+                aria-label="Zoom in"
+              >
+                <ZoomIn />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                disabled={scale === 1}
+                onClick={() => setScale(1)}
+                aria-label="Reset zoom to fit"
+              >
+                <Maximize2 />
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-black/5 dark:bg-white/5">
@@ -149,20 +173,32 @@ export function MediaLightbox({ items, openIndex, onOpenIndexChange }: MediaLigh
             </Button>
           )}
 
-          {/* `max-h-full` (percentage) doesn't reliably resolve for a
-              replaced element sized by flexbox + `overflow-auto` — the
-              image's own intrinsic size (e.g. 1080×1350) won a sizing fight
-              against its flex container and got clipped at the bottom edge
-              instead of shrinking to fit (confirmed against a real saved
-              carousel slide during Phase 1C.6 browser verification). A
-              viewport-relative cap sidesteps that ambiguity entirely. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={current.imageUrl}
-            alt={current.label || "Media preview"}
-            className={cn("max-h-[70vh] max-w-full object-contain transition-transform duration-150")}
-            style={{ transform: `scale(${scale})` }}
-          />
+          {current.available ? (
+            // `max-h-full` (percentage) doesn't reliably resolve for a
+            // replaced element sized by flexbox + `overflow-auto` — the
+            // image's own intrinsic size (e.g. 1080×1350) won a sizing fight
+            // against its flex container and got clipped at the bottom edge
+            // instead of shrinking to fit (confirmed against a real saved
+            // carousel slide during Phase 1C.6 browser verification). A
+            // viewport-relative cap sidesteps that ambiguity entirely.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={current.imageUrl}
+              alt={current.label || "Media preview"}
+              className={cn("max-h-[70vh] max-w-full object-contain transition-transform duration-150")}
+              style={{ transform: `scale(${scale})` }}
+            />
+          ) : (
+            // Failed/not-yet-generated slot — still occupies its original
+            // position in `items` (Phase 1C.6: don't skip slide numbers or
+            // renumber around missing media), shown with the same
+            // MediaUnavailable state every gallery tile already uses.
+            <MediaFailedState
+              errorCode={current.errorCode}
+              errorMessage={current.errorMessage}
+              className="min-h-48 w-full max-w-sm"
+            />
+          )}
 
           {hasMultiple && (
             <Button
