@@ -137,10 +137,84 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
   ctx.fillRect(0, 0, width, height)
 
   // A designed NO_MEDIA frame folds the media frame's vertical space into
-  // an expanded headline instead of leaving an empty panel — see the
-  // `noMedia` doc comment above.
-  const mediaFrameEl = layout.elements.find((el) => el.type === "mediaFrame")
-  const expandHeadlineThrough = noMedia && mediaFrameEl ? mediaFrameEl.y + mediaFrameEl.height : null
+  // whichever text element actually sits next to it, instead of leaving an
+  // empty panel — see the `noMedia` doc comment above. Phase 1C.5 note: this
+  // used to always target `headline`, assuming headline directly precedes
+  // mediaFrame (true for the original single default layout) — but
+  // compositions now vary in shape: `text-first` has `body` adjacent to
+  // `mediaFrame` instead, and `framed-editorial` puts `mediaFrame` *before*
+  // `headline`. So this looks at mediaFrame's actual neighbors in
+  // `elements[]` and expands whichever one (`headline` or `body`) is
+  // actually adjacent to it, in whichever direction that is — confirmed
+  // against a real NO_MEDIA `text-first` carousel slide during Phase 1C.5
+  // visual QA, where the old headline-only assumption left a large dead gap
+  // instead of filling the reclaimed space.
+  const mediaFrameIndex = layout.elements.findIndex((el) => el.type === "mediaFrame")
+  let expandTarget: TemplateElement | undefined
+  let expandRegionStart = 0
+  let expandRegionEnd = 0
+
+  if (noMedia && mediaFrameIndex >= 0) {
+    const mediaFrameEl = layout.elements[mediaFrameIndex]
+    const preceding = mediaFrameIndex > 0 ? layout.elements[mediaFrameIndex - 1] : undefined
+    const following = mediaFrameIndex < layout.elements.length - 1 ? layout.elements[mediaFrameIndex + 1] : undefined
+    const isTextish = (el: TemplateElement | undefined): el is TemplateElement => el?.type === "headline" || el?.type === "body"
+    const hasContent = (el: TemplateElement) => (el.type === "headline" ? !!content.headline : !!content.body)
+
+    const adjacent = isTextish(preceding) ? preceding : isTextish(following) ? following : undefined
+
+    if (adjacent && hasContent(adjacent)) {
+      expandTarget = adjacent
+      expandRegionStart = Math.min(mediaFrameEl.y, adjacent.y)
+      expandRegionEnd = Math.max(mediaFrameEl.y + mediaFrameEl.height, adjacent.y + adjacent.height)
+    } else if (content.headline) {
+      // The AI plan schemas allow an empty `body` (`looseText`, no min
+      // length — e.g. a punchy hook slide with no supporting copy), so the
+      // element literally adjacent to mediaFrame can have nothing to draw.
+      // Rather than reclaim the space for text that isn't there (leaving it
+      // dead again), fall back to the headline even when it isn't adjacent.
+      const headlineEl = layout.elements.find((el) => el.type === "headline")
+      if (headlineEl) {
+        expandTarget = headlineEl
+        expandRegionStart = Math.min(mediaFrameEl.y, headlineEl.y)
+        // Prefer ending the region just above a real CTA (if one exists)
+        // over reaching all the way to mediaFrame's own bottom edge — keeps
+        // the centered headline visually paired with its own CTA instead of
+        // stranding a gap between them.
+        const ctaEl = content.cta ? layout.elements.find((el) => el.type === "cta") : undefined
+        expandRegionEnd = ctaEl ? ctaEl.y - 40 : Math.max(mediaFrameEl.y + mediaFrameEl.height, headlineEl.y + headlineEl.height)
+      }
+    }
+  }
+
+  /** Shared by the `headline`/`body` cases below — draws `text` bigger and vertically centered within the reclaimed `[expandRegionStart, expandRegionEnd]` region rather than at the element's own fixed position/size. */
+  function drawExpandedText(el: TemplateElement, text: string, sizeMultiplier: number, defaultFontSize: number, defaultFontWeight: string, defaultLineHeight: number, defaultMaxLines: number, color: string, letterSpacing?: string) {
+    const fontSize = (el.fontSize ?? defaultFontSize) * sizeMultiplier
+    const lineHeightMultiplier = el.lineHeight ?? defaultLineHeight
+    const maxLines = (el.maxLines ?? defaultMaxLines) + 1
+    const fontFamily = nodeFontFamily()
+
+    ctx.font = `${el.fontWeight ?? defaultFontWeight} ${fontSize}px ${fontFamily}`
+    const lineCount = Math.min(Math.max(wrapText(ctx, text, el.width).length, 1), maxLines)
+    const blockHeight = lineCount * fontSize * lineHeightMultiplier
+    const regionHeight = expandRegionEnd - expandRegionStart
+    const startY = expandRegionStart + Math.max(0, (regionHeight - blockHeight) / 2)
+
+    drawTextBlock(ctx, {
+      text,
+      x: el.x,
+      y: startY,
+      maxWidth: el.width,
+      fontSize,
+      fontFamily,
+      fontWeight: el.fontWeight ?? defaultFontWeight,
+      color,
+      lineHeightMultiplier,
+      maxLines,
+      align: "left",
+      letterSpacing,
+    })
+  }
 
   for (const el of layout.elements) {
     switch (el.type) {
@@ -149,8 +223,16 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
 
         const text = content.category.toUpperCase()
         const fontFamily = nodeFontFamily()
-        ctx.font = `${el.fontWeight ?? "700"} ${el.fontSize ?? 24}px ${fontFamily}`
-        const paddingX = (el.fontSize ?? 24) * 0.85
+        const fontSize = el.fontSize ?? 24
+        ctx.font = `${el.fontWeight ?? "700"} ${fontSize}px ${fontFamily}`
+        // A tracked-out "kicker" — small caps with generous letter-spacing
+        // is the real editorial device this stands in for (vs. a plain
+        // tight badge, which reads as a generic app/SaaS chip regardless of
+        // its color — Phase 1C.6 QA feedback: "category badge feels
+        // generic"). Set before `measureText` so the pill sizes around the
+        // spaced-out text, not the unspaced string.
+        if ("letterSpacing" in ctx) ctx.letterSpacing = `${(fontSize * 0.06).toFixed(1)}px`
+        const paddingX = fontSize * 0.85
         const pillWidth = Math.min(el.width, ctx.measureText(text).width + paddingX * 2)
         const bg = resolveBackgroundColor(el.background, brand, pageBackground)
 
@@ -164,6 +246,7 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
         ctx.textAlign = "left"
         ctx.textBaseline = "middle"
         ctx.fillText(text, el.x + paddingX, el.y + el.height / 2)
+        if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"
         break
       }
 
@@ -182,38 +265,17 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
       case "headline": {
         if (!content.headline) break
 
-        if (expandHeadlineThrough !== null) {
-          // Typography-first treatment: bigger, vertically centered within
-          // the combined headline + media-frame region, so a NO_MEDIA
-          // frame's reclaimed space is actually filled instead of leaving
-          // a large empty gap above the body copy (confirmed against real
-          // saved carousel data during Phase 1C QA — the previous fixed
-          // 0.18 offset only nudged the block down without accounting for
-          // its own height).
-          const expandedHeight = expandHeadlineThrough - el.y
-          const expandedFontSize = (el.fontSize ?? 56) * 1.25
-          const lineHeightMultiplier = el.lineHeight ?? 1.15
-          const maxLines = (el.maxLines ?? 3) + 1
-          const fontFamily = nodeFontFamily()
+        // A large bold headline set at default (zero) tracking is one of
+        // the more recognizable "generic AI card" tells — real editorial
+        // mastheads tighten big display type slightly (Phase 1C.6 QA
+        // feedback: "headline treatment still feels generic"). Scales with
+        // font size so it stays proportionate whether this composition's
+        // headline is 40px or 64px.
+        const headlineFontSize = el.fontSize ?? 56
+        const headlineLetterSpacing = `${(-headlineFontSize * 0.015).toFixed(1)}px`
 
-          ctx.font = `${el.fontWeight ?? "700"} ${expandedFontSize}px ${fontFamily}`
-          const lineCount = Math.min(Math.max(wrapText(ctx, content.headline, el.width).length, 1), maxLines)
-          const blockHeight = lineCount * expandedFontSize * lineHeightMultiplier
-          const startY = el.y + Math.max(0, (expandedHeight - blockHeight) / 2)
-
-          drawTextBlock(ctx, {
-            text: content.headline,
-            x: el.x,
-            y: startY,
-            maxWidth: el.width,
-            fontSize: expandedFontSize,
-            fontFamily,
-            fontWeight: el.fontWeight ?? "700",
-            color: resolveTextColor(el, brand, pageBackground, false),
-            lineHeightMultiplier,
-            maxLines,
-            align: "left",
-          })
+        if (el === expandTarget) {
+          drawExpandedText(el, content.headline, 1.25, 56, "700", 1.15, 3, resolveTextColor(el, brand, pageBackground, false), headlineLetterSpacing)
           break
         }
 
@@ -222,13 +284,14 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
           x: el.x,
           y: el.y,
           maxWidth: el.width,
-          fontSize: el.fontSize ?? 56,
+          fontSize: headlineFontSize,
           fontFamily: nodeFontFamily(),
           fontWeight: el.fontWeight ?? "700",
           color: resolveTextColor(el, brand, pageBackground, false),
           lineHeightMultiplier: el.lineHeight ?? 1.1,
           maxLines: el.maxLines ?? 3,
           align: el.align ?? "left",
+          letterSpacing: headlineLetterSpacing,
         })
         break
       }
@@ -256,11 +319,56 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
         }
 
         ctx.restore()
+
+        // Phase 1C.5's "framed inset" treatment — an inward stroke so the
+        // photo reads as deliberately framed rather than just a boxed crop.
+        // Full-bleed compositions never set `borderWidth`, so this is a
+        // no-op for them.
+        if (el.borderWidth) {
+          ctx.save()
+          const inset = el.borderWidth / 2
+          roundedRectPath(ctx, el.x + inset, el.y + inset, el.width - el.borderWidth, el.height - el.borderWidth, Math.max(0, (el.borderRadius ?? 24) - inset))
+          ctx.lineWidth = el.borderWidth
+          ctx.strokeStyle =
+            el.borderColor === "brand-accent"
+              ? brand.accentColor
+              : el.borderColor === "auto" || el.borderColor === undefined
+                ? resolveTextColor(el, brand, pageBackground, true)
+                : el.borderColor
+          ctx.stroke()
+          ctx.restore()
+        }
+        break
+      }
+
+      case "scrim": {
+        // A legibility gradient behind text sitting directly over a
+        // full-bleed image — see `TemplateElementType`'s doc comment.
+        // Transparent at the edge furthest from `scrimDirection`, opaque at
+        // the near edge, so text anchored at that edge stays readable
+        // regardless of what the underlying photo looks like.
+        const toTop = el.scrimDirection === "to-top"
+        const gradient = toTop
+          ? ctx.createLinearGradient(0, el.y + el.height, 0, el.y)
+          : ctx.createLinearGradient(0, el.y, 0, el.y + el.height)
+
+        const scrimColor = el.color && el.color !== "auto" ? el.color : "rgba(8,9,12,0.82)"
+        gradient.addColorStop(0, "rgba(0,0,0,0)")
+        gradient.addColorStop(1, scrimColor)
+
+        ctx.fillStyle = gradient
+        ctx.fillRect(el.x, el.y, el.width, el.height)
         break
       }
 
       case "body": {
         if (!content.body) break
+
+        if (el === expandTarget) {
+          drawExpandedText(el, content.body, 1.1, 28, "500", 1.3, 3, resolveTextColor(el, brand, pageBackground, true))
+          break
+        }
+
         drawTextBlock(ctx, {
           text: content.body,
           x: el.x,
@@ -314,22 +422,41 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
       }
 
       case "branding": {
+        // A thin rule above the byline row — the real editorial device a
+        // masthead/footer credit line uses to read as a deliberate,
+        // structural part of the page rather than stray leftover text
+        // (Phase 1C.6 QA feedback: "branding is too weak/subtle"). Full
+        // element width, not just the logo+label's own measured width, so
+        // it reads as a section divider.
+        ctx.fillStyle = resolveTextColor(el, brand, pageBackground, true)
+        ctx.globalAlpha = 0.35
+        ctx.fillRect(el.x, el.y, el.width, 1)
+        ctx.globalAlpha = 1
+
         let textX = el.x
+        const contentY = el.y + el.height / 2 + 6
 
         if (logo) {
-          const logoSize = el.height
+          const logoSize = el.height - 10
           const logoAspect = logo.width / logo.height
           const logoWidth = logoSize * logoAspect
-          ctx.drawImage(logo, el.x, el.y, logoWidth, logoSize)
+          ctx.drawImage(logo, el.x, contentY - logoSize / 2, logoWidth, logoSize)
           textX = el.x + logoWidth + logoSize * 0.4
         }
 
         if (brandLabel) {
-          ctx.font = `${el.fontWeight ?? "600"} ${el.fontSize ?? 22}px ${nodeFontFamily()}`
-          ctx.fillStyle = resolveTextColor(el, brand, pageBackground, true)
+          const fontSize = el.fontSize ?? 22
+          ctx.font = `${el.fontWeight ?? "700"} ${fontSize}px ${nodeFontFamily()}`
+          // Full-strength (not muted) text and a touch of tracking — a
+          // wordmark reads as intentional branding at this weight; the
+          // previous muted/lighter treatment made it disappear entirely on
+          // a quick glance, exactly the "too weak" complaint.
+          ctx.fillStyle = resolveTextColor(el, brand, pageBackground, false)
+          if ("letterSpacing" in ctx) ctx.letterSpacing = `${(fontSize * 0.02).toFixed(1)}px`
           ctx.textAlign = "left"
           ctx.textBaseline = "middle"
-          ctx.fillText(brandLabel, textX, el.y + el.height / 2)
+          ctx.fillText(brandLabel, textX, contentY)
+          if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"
         }
         break
       }

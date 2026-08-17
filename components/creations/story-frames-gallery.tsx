@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Clapperboard, ImageIcon, Loader2, Type } from "lucide-react";
+import { Clapperboard, ImageIcon, Loader2, Type } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StoryFrameMediaDTO } from "@/lib/story-plan/types";
 import { displayedMediaType } from "@/lib/format-media/display-media-type";
+import { MediaFailedState } from "./media-failed-state";
+import { MediaLightbox, type LightboxItem } from "./media-lightbox";
 
 type StoryFramesGalleryProps = {
   storyPlanId: string;
@@ -32,6 +34,7 @@ const MAX_POLL_MS = 120_000;
  */
 export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalleryProps) {
   const [frames, setFrames] = React.useState<StoryFrameMediaDTO[] | null>(null);
+  const [openIndex, setOpenIndex] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -87,27 +90,40 @@ export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalle
     );
   }
 
+  const viewableFrames = frames.filter((frame) => frame.status === "COMPLETED" && frame.renderedImageUrl);
+  const lightboxItems: LightboxItem[] = viewableFrames.map((frame) => ({
+    id: frame.id,
+    imageUrl: frame.renderedImageUrl!,
+    label: `Frame ${frame.frameOrder}`,
+    badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(frame.mediaType, frame.resolutionPath)]?.label ?? "Image",
+  }));
+
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
       {frames.map((frame) => {
         const shownType = displayedMediaType(frame.mediaType, frame.resolutionPath);
         const badge = MEDIA_TYPE_BADGE[shownType] ?? MEDIA_TYPE_BADGE.NO_MEDIA;
+        const isViewable = frame.status === "COMPLETED" && frame.renderedImageUrl;
 
         return (
           <div key={frame.id} className="w-40 shrink-0 space-y-2">
             <div className="aspect-[9/16] overflow-hidden rounded-xl border bg-muted">
-              {frame.status === "COMPLETED" && frame.renderedImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={frame.renderedImageUrl}
-                  alt={`Frame ${frame.frameOrder}`}
-                  className="h-full w-full object-cover"
-                />
+              {isViewable ? (
+                <button
+                  type="button"
+                  className="block h-full w-full cursor-zoom-in"
+                  onClick={() => setOpenIndex(viewableFrames.findIndex((f) => f.id === frame.id))}
+                  aria-label={`Open Frame ${frame.frameOrder} preview`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={frame.renderedImageUrl!}
+                    alt={`Frame ${frame.frameOrder}`}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
               ) : frame.status === "FAILED" ? (
-                <div className="flex h-full flex-col items-center justify-center gap-1 p-3 text-center text-xs text-destructive">
-                  <AlertTriangle className="size-4" />
-                  {frame.errorMessage || "This frame couldn't be generated."}
-                </div>
+                <MediaFailedState errorCode={frame.errorCode} errorMessage={frame.errorMessage} />
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -125,6 +141,8 @@ export function StoryFramesGallery({ storyPlanId, frameCount }: StoryFramesGalle
           </div>
         );
       })}
+
+      <MediaLightbox items={lightboxItems} openIndex={openIndex} onOpenIndexChange={setOpenIndex} />
     </div>
   );
 }

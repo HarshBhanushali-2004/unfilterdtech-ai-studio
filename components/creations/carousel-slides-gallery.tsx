@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Clapperboard, ImageIcon, Loader2, Type } from "lucide-react";
+import { Clapperboard, ImageIcon, Loader2, Type } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CarouselSlideMediaDTO } from "@/lib/carousel-plan/types";
 import { displayedMediaType } from "@/lib/format-media/display-media-type";
+import { MediaFailedState } from "./media-failed-state";
+import { MediaLightbox, type LightboxItem } from "./media-lightbox";
 
 type CarouselSlidesGalleryProps = {
   carouselPlanId: string;
@@ -48,6 +50,7 @@ const MAX_POLL_MS = 120_000;
  */
 export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSlidesGalleryProps) {
   const [slides, setSlides] = React.useState<CarouselSlideMediaDTO[] | null>(null);
+  const [openIndex, setOpenIndex] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -103,6 +106,17 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
     );
   }
 
+  // Only completed slides have anything to view fullscreen — prev/next in
+  // the lightbox cycles through these, not the raw slide list, so it never
+  // lands on a slide with no image (see `MediaLightbox`'s doc comment).
+  const viewableSlides = slides.filter((slide) => slide.status === "COMPLETED" && slide.renderedImageUrl);
+  const lightboxItems: LightboxItem[] = viewableSlides.map((slide) => ({
+    id: slide.id,
+    imageUrl: slide.renderedImageUrl!,
+    label: `Slide ${slide.slideOrder}`,
+    badgeLabel: MEDIA_TYPE_BADGE[displayedMediaType(slide.mediaType, slide.resolutionPath)]?.label ?? "Image",
+  }));
+
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
       {slides.map((slide) => {
@@ -111,23 +125,28 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
         // never be labeled "Video" (see `displayedMediaType`'s doc comment).
         const shownType = displayedMediaType(slide.mediaType, slide.resolutionPath);
         const badge = MEDIA_TYPE_BADGE[shownType] ?? MEDIA_TYPE_BADGE.NO_MEDIA;
+        const isViewable = slide.status === "COMPLETED" && slide.renderedImageUrl;
 
         return (
           <div key={slide.id} className="w-56 shrink-0 space-y-2">
             <div className="aspect-[4/5] overflow-hidden rounded-xl border bg-muted">
-              {slide.status === "COMPLETED" && slide.renderedImageUrl ? (
+              {isViewable ? (
                 // Data URL stored directly in the DB (no object storage configured) — same pattern as GeneratedImage.imageUrl.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={slide.renderedImageUrl}
-                  alt={`Slide ${slide.slideOrder}`}
-                  className="h-full w-full object-cover"
-                />
+                <button
+                  type="button"
+                  className="block h-full w-full cursor-zoom-in"
+                  onClick={() => setOpenIndex(viewableSlides.findIndex((s) => s.id === slide.id))}
+                  aria-label={`Open Slide ${slide.slideOrder} preview`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={slide.renderedImageUrl!}
+                    alt={`Slide ${slide.slideOrder}`}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
               ) : slide.status === "FAILED" ? (
-                <div className="flex h-full flex-col items-center justify-center gap-1 p-3 text-center text-xs text-destructive">
-                  <AlertTriangle className="size-4" />
-                  {slide.errorMessage || "This slide couldn't be generated."}
-                </div>
+                <MediaFailedState errorCode={slide.errorCode} errorMessage={slide.errorMessage} />
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -145,6 +164,8 @@ export function CarouselSlidesGallery({ carouselPlanId, slideCount }: CarouselSl
           </div>
         );
       })}
+
+      <MediaLightbox items={lightboxItems} openIndex={openIndex} onOpenIndexChange={setOpenIndex} />
     </div>
   );
 }

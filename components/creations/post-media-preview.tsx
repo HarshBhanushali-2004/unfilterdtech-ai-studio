@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Clapperboard, ImageIcon, Loader2 } from "lucide-react";
+import { Clapperboard, ImageIcon, Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PostMediaDTO } from "@/lib/post-plan/types";
 import { displayedMediaType } from "@/lib/format-media/display-media-type";
+import { MediaFailedState } from "./media-failed-state";
+import { MediaLightbox, type LightboxItem } from "./media-lightbox";
 
 const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED"]);
 const POLL_INTERVAL_MS = 3000;
@@ -26,6 +28,7 @@ const MEDIA_TYPE_BADGE: Record<string, { label: string; icon: React.ReactNode }>
  */
 export function PostMediaPreview({ postPlanId }: { postPlanId: string }) {
   const [media, setMedia] = React.useState<PostMediaDTO | null | undefined>(undefined);
+  const [open, setOpen] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -71,18 +74,26 @@ export function PostMediaPreview({ postPlanId }: { postPlanId: string }) {
   }
 
   const badge = MEDIA_TYPE_BADGE[displayedMediaType(media.mediaType, media.resolutionPath)];
+  const isViewable = media.status === "COMPLETED" && media.renderedImageUrl;
+  const lightboxItems: LightboxItem[] = isViewable
+    ? [{ id: media.id, imageUrl: media.renderedImageUrl!, label: "", badgeLabel: badge?.label ?? "Image" }]
+    : [];
 
   return (
     <div className="max-w-sm space-y-2">
       <div className="aspect-[4/5] overflow-hidden rounded-xl border bg-muted">
-        {media.status === "COMPLETED" && media.renderedImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={media.renderedImageUrl} alt="Generated post" className="h-full w-full object-cover" />
+        {isViewable ? (
+          <button
+            type="button"
+            className="block h-full w-full cursor-zoom-in"
+            onClick={() => setOpen(true)}
+            aria-label="Open post preview"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={media.renderedImageUrl!} alt="Generated post" className="h-full w-full object-cover" />
+          </button>
         ) : media.status === "FAILED" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 p-3 text-center text-xs text-destructive">
-            <AlertTriangle className="size-4" />
-            {media.errorMessage || "This post couldn't be generated."}
-          </div>
+          <MediaFailedState errorCode={media.errorCode} errorMessage={media.errorMessage} />
         ) : (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -96,6 +107,12 @@ export function PostMediaPreview({ postPlanId }: { postPlanId: string }) {
           {badge.label}
         </Badge>
       )}
+
+      <MediaLightbox
+        items={lightboxItems}
+        openIndex={open ? 0 : null}
+        onOpenIndexChange={(index) => setOpen(index !== null)}
+      />
     </div>
   );
 }

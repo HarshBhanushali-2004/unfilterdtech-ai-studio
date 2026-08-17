@@ -23,6 +23,7 @@ import {
   TEXT_STYLES,
 } from "@/lib/creative-renderer";
 import { listTemplates } from "@/lib/template-renderer/registry";
+import { DEFAULT_COMPOSITION_ID } from "@/lib/template-renderer/composition-selector";
 import { cn } from "@/lib/utils";
 
 export type BrandKitFormValues = {
@@ -394,7 +395,7 @@ export function BrandKitForm({
 
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {listTemplates().map((template) => {
-            const bg = template.formats.carousel.background.color;
+            const bg = template.formats.carousel[DEFAULT_COMPOSITION_ID]?.background.color ?? "auto";
             const backgroundColor =
               bg === "auto" || bg === "brand-primary" ? values.primaryColor || "#111827" : bg;
 

@@ -8,7 +8,8 @@ import { loadStillImageForCompositing } from "@/lib/format-media/load-still-imag
 import { resolveSlideMedia } from "@/lib/media-resolver/service"
 import { brandKitToRenderProfile } from "@/lib/template-renderer/brand-profile"
 import { renderFrame } from "@/lib/template-renderer/render-frame"
-import { getTemplate } from "@/lib/template-renderer/registry"
+import { getComposition, getTemplate } from "@/lib/template-renderer/registry"
+import { selectComposition } from "@/lib/template-renderer/composition-selector"
 import { createNodeCanvas, ensureNodeFontsRegistered } from "@/lib/creative-renderer/node-canvas"
 
 import type { PostMediaDTO } from "./types"
@@ -73,7 +74,16 @@ export async function generateMediaForPostPlan({
     update: { mediaType: plan.mediaType, status: "RESOLVING", errorMessage: null, errorCode: null },
   })
 
-  const layout = getTemplate(brandKit?.templateFamilyId).formats.post
+  const template = getTemplate(brandKit?.templateFamilyId)
+  const compositionId = selectComposition({
+    format: "post",
+    headline: plan.headline,
+    body: plan.body,
+    mediaType: plan.mediaType,
+    order: 1,
+    total: 1,
+  })
+  const layout = getComposition(template, "post", compositionId)
   const brandProfile = brandKitToRenderProfile(brandKit)
   const brandLabel = brandKit?.name ?? ""
 

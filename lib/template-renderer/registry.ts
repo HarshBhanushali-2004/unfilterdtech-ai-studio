@@ -1,6 +1,7 @@
 import { EDITORIAL_TECH } from "./families/editorial-tech"
 import { MINIMAL_MAGAZINE } from "./families/minimal-magazine"
-import type { TemplateFamily } from "./types"
+import { DEFAULT_COMPOSITION_ID } from "./composition-selector"
+import type { CompositionId, ContentFormat, FormatLayout, TemplateFamily } from "./types"
 
 /**
  * Every registered `TemplateFamily`, keyed by id — code-defined, not
@@ -36,6 +37,28 @@ export function getTemplate(id: string | null | undefined): TemplateFamily {
 
 export function getDefaultTemplate(): TemplateFamily {
   return REGISTRY[DEFAULT_TEMPLATE_ID]
+}
+
+/**
+ * Resolves one composition's `FormatLayout` for a format — Phase 1C.5's
+ * lookup counterpart to `composition-selector.ts`'s `selectComposition()`.
+ * Not every format registers every `CompositionId` (e.g. only `carousel`
+ * registers `"numbered-editorial"`, see `types.ts`'s `FormatCompositions`
+ * doc comment), so a requested id that isn't registered for this format
+ * falls back to `DEFAULT_COMPOSITION_ID`, then to whichever composition the
+ * format *does* have — mirroring `getTemplate`'s "template resolution must
+ * never throw or block generation" discipline.
+ */
+export function getComposition(template: TemplateFamily, format: ContentFormat, compositionId: CompositionId): FormatLayout {
+  const compositions = template.formats[format]
+  const resolved = compositions[compositionId] ?? compositions[DEFAULT_COMPOSITION_ID]
+  if (resolved) return resolved
+
+  const fallback = Object.values(compositions)[0]
+  if (!fallback) {
+    throw new Error(`Template "${template.id}" registers no compositions at all for format "${format}".`)
+  }
+  return fallback
 }
 
 export { DEFAULT_TEMPLATE_ID }

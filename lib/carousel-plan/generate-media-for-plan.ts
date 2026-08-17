@@ -9,9 +9,11 @@ import { loadStillImageForCompositing } from "@/lib/format-media/load-still-imag
 import { resolveSlideMedia } from "@/lib/media-resolver/service"
 import { brandKitToRenderProfile } from "@/lib/template-renderer/brand-profile"
 import { renderFrame } from "@/lib/template-renderer/render-frame"
-import { getTemplate } from "@/lib/template-renderer/registry"
+import { getComposition, getTemplate } from "@/lib/template-renderer/registry"
+import { selectComposition } from "@/lib/template-renderer/composition-selector"
 import { createNodeCanvas, ensureNodeFontsRegistered } from "@/lib/creative-renderer/node-canvas"
 import type { RenderImageLike } from "@/lib/creative-renderer/types"
+import type { TemplateFamily } from "@/lib/template-renderer/types"
 
 import type { CarouselSlideMediaDTO } from "./types"
 
@@ -47,7 +49,7 @@ type ResolveAndRenderSlideOptions = {
   carouselPlanId: string
   plan: CarouselPlanObject
   slide: CarouselPlanSlide
-  layout: ReturnType<typeof getTemplate>["formats"]["carousel"]
+  template: TemplateFamily
   brandProfile: ReturnType<typeof brandKitToRenderProfile>
   brandLabel: string
   logoImage: RenderImageLike | null
@@ -58,7 +60,7 @@ async function resolveAndRenderSlide({
   carouselPlanId,
   plan,
   slide,
-  layout,
+  template,
   brandProfile,
   brandLabel,
   logoImage,
@@ -98,6 +100,19 @@ async function resolveAndRenderSlide({
     })
 
     const mediaImage = mediaAsset ? await loadStillImageForCompositing(mediaAsset, `carousel slide ${slide.order}`) : null
+
+    // Composition is selected per-slide (not once for the whole plan) —
+    // each slide's own content decides its own visual arrangement, see
+    // `composition-selector.ts`.
+    const compositionId = selectComposition({
+      format: "carousel",
+      headline: slide.headline,
+      body: slide.body,
+      mediaType: slide.mediaType,
+      order: slide.order,
+      total: plan.slides.length,
+    })
+    const layout = getComposition(template, "carousel", compositionId)
 
     const { ctx, toPngDataUrl } = createNodeCanvas(layout.canvas.width, layout.canvas.height)
 
@@ -178,7 +193,7 @@ export async function generateMediaForCarouselPlan({
 }: GenerateMediaForCarouselPlanInput): Promise<CarouselSlideMediaDTO[]> {
   ensureNodeFontsRegistered()
 
-  const layout = getTemplate(brandKit?.templateFamilyId).formats.carousel
+  const template = getTemplate(brandKit?.templateFamilyId)
   const brandProfile = brandKitToRenderProfile(brandKit)
   const brandLabel = brandKit?.name ?? ""
   const logoImage = await loadBrandLogo(brandProfile)
@@ -188,7 +203,7 @@ export async function generateMediaForCarouselPlan({
       carouselPlanId,
       plan,
       slide,
-      layout,
+      template,
       brandProfile,
       brandLabel,
       logoImage,

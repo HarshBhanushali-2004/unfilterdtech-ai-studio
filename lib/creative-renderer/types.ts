@@ -93,6 +93,9 @@ export type RenderContext2D = {
   fillRect(x: number, y: number, width: number, height: number): void
   clearRect(x: number, y: number, width: number, height: number): void
 
+  /** Used by `render-frame.ts`'s `"scrim"` element (a legibility gradient behind text sitting over a full-bleed image) — see `RenderGradient` above. */
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): RenderGradient
+
   fillText(text: string, x: number, y: number, maxWidth?: number): void
   measureText(text: string): { width: number }
 
@@ -121,6 +124,11 @@ export type RenderContext2D = {
   globalAlpha: number
   /** Not part of the historical Canvas 2D spec (Chromium-only today) — `text-renderer.ts` feature-detects with `"letterSpacing" in ctx` before using it, same as before this type existed. */
   letterSpacing?: string
+}
+
+/** The minimal surface of a real `CanvasGradient` — every real Canvas 2D context's `createLinearGradient(...)` returns an object satisfying this structurally, same "narrowed subset" discipline as `RenderContext2D` itself. */
+export type RenderGradient = {
+  addColorStop(offset: number, color: string): void
 }
 
 /**

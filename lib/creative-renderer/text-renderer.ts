@@ -51,6 +51,8 @@ export type TextBlockOptions = {
   lineHeightMultiplier?: number
   align?: CanvasTextAlign
   maxLines?: number
+  /** CSS length (e.g. "-1.2px") — feature-detected via `"letterSpacing" in ctx`, same guard as everywhere else this touches canvas letter-spacing. Negative values tighten large bold headlines into a more deliberate, premium-editorial feel instead of default browser/font tracking (Phase 1C.6 QA feedback: "headline treatment still feels generic"). */
+  letterSpacing?: string
 }
 
 /**
@@ -73,11 +75,13 @@ export function drawTextBlock(ctx: RenderContext2D, options: TextBlockOptions): 
     lineHeightMultiplier = 1.25,
     align = "left",
     maxLines = 4,
+    letterSpacing,
   } = options
 
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`
   ctx.textAlign = align
   ctx.textBaseline = "top"
+  if (letterSpacing !== undefined && "letterSpacing" in ctx) ctx.letterSpacing = letterSpacing
 
   const rawLines = wrapText(ctx, text, maxWidth)
   const lines = clampLines(ctx, rawLines, maxWidth, maxLines)
@@ -99,6 +103,8 @@ export function drawTextBlock(ctx: RenderContext2D, options: TextBlockOptions): 
     ctx.shadowBlur = 0
     ctx.shadowOffsetY = 0
   })
+
+  if (letterSpacing !== undefined && "letterSpacing" in ctx) ctx.letterSpacing = "0px"
 
   return lines.length * lineHeight
 }

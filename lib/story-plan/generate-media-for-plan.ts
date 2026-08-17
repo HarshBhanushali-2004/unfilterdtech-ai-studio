@@ -9,9 +9,11 @@ import { loadStillImageForCompositing } from "@/lib/format-media/load-still-imag
 import { resolveSlideMedia } from "@/lib/media-resolver/service"
 import { brandKitToRenderProfile } from "@/lib/template-renderer/brand-profile"
 import { renderFrame } from "@/lib/template-renderer/render-frame"
-import { getTemplate } from "@/lib/template-renderer/registry"
+import { getComposition, getTemplate } from "@/lib/template-renderer/registry"
+import { selectComposition } from "@/lib/template-renderer/composition-selector"
 import { createNodeCanvas, ensureNodeFontsRegistered } from "@/lib/creative-renderer/node-canvas"
 import type { RenderImageLike } from "@/lib/creative-renderer/types"
+import type { TemplateFamily } from "@/lib/template-renderer/types"
 
 import type { StoryFrameMediaDTO } from "./types"
 
@@ -47,7 +49,7 @@ type ResolveAndRenderFrameOptions = {
   storyPlanId: string
   plan: StoryPlanObject
   frame: StoryPlanFrame
-  layout: ReturnType<typeof getTemplate>["formats"]["story"]
+  template: TemplateFamily
   brandProfile: ReturnType<typeof brandKitToRenderProfile>
   brandLabel: string
   logoImage: RenderImageLike | null
@@ -58,7 +60,7 @@ async function resolveAndRenderFrame({
   storyPlanId,
   plan,
   frame,
-  layout,
+  template,
   brandProfile,
   brandLabel,
   logoImage,
@@ -88,6 +90,16 @@ async function resolveAndRenderFrame({
     })
 
     const mediaImage = mediaAsset ? await loadStillImageForCompositing(mediaAsset, `story frame ${frame.order}`) : null
+
+    const compositionId = selectComposition({
+      format: "story",
+      headline: frame.headline,
+      body: frame.body,
+      mediaType: frame.mediaType,
+      order: frame.order,
+      total: plan.frames.length,
+    })
+    const layout = getComposition(template, "story", compositionId)
 
     const { ctx, toPngDataUrl } = createNodeCanvas(layout.canvas.width, layout.canvas.height)
 
@@ -158,7 +170,7 @@ export async function generateMediaForStoryPlan({
 }: GenerateMediaForStoryPlanInput): Promise<StoryFrameMediaDTO[]> {
   ensureNodeFontsRegistered()
 
-  const layout = getTemplate(brandKit?.templateFamilyId).formats.story
+  const template = getTemplate(brandKit?.templateFamilyId)
   const brandProfile = brandKitToRenderProfile(brandKit)
   const brandLabel = brandKit?.name ?? ""
   const logoImage = await loadBrandLogo(brandProfile)
@@ -168,7 +180,7 @@ export async function generateMediaForStoryPlan({
       storyPlanId,
       plan,
       frame,
-      layout,
+      template,
       brandProfile,
       brandLabel,
       logoImage,
