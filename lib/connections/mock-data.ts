@@ -29,6 +29,12 @@ const MOCK_PROFILES: Record<
   },
   TWITTER: { accountName: "UnfilterdTech", accountUsername: "unfilterdtech" },
   YOUTUBE: { accountName: "UnfilterdTech", accountUsername: "unfilterdtech" },
+  // Unreachable in practice — CANVA is in OAUTH_ENABLED_PLATFORMS
+  // (lib/connections/platforms.ts), so ConnectionCard always sends it
+  // through the real `/api/canva/connect` PKCE flow, never this mock path.
+  // Still required: MOCK_PROFILES is a Record<Platform, ...>, so every enum
+  // member needs an entry for this file to type-check.
+  CANVA: { accountName: "UnfilterdTech", accountUsername: "unfilterdtech" },
 };
 
 const MOCK_TOKEN_LIFETIME_MS = 60 * 24 * 60 * 60 * 1000; // 60 days

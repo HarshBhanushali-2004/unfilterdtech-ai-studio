@@ -69,12 +69,22 @@ function YoutubeGlyph({ className }: GlyphProps) {
   );
 }
 
+function CanvaGlyph({ className }: GlyphProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="6" stroke="currentColor" strokeWidth="2" />
+      <circle cx="15.5" cy="15.5" r="3.2" fill="currentColor" />
+    </svg>
+  );
+}
+
 const GLYPHS: Record<Platform, typeof InstagramGlyph> = {
   INSTAGRAM: InstagramGlyph,
   FACEBOOK: FacebookGlyph,
   LINKEDIN: LinkedInGlyph,
   TWITTER: XGlyph,
   YOUTUBE: YoutubeGlyph,
+  CANVA: CanvaGlyph,
 };
 
 /** Accent chip background/foreground per platform — the one place in this
@@ -86,6 +96,7 @@ export const PLATFORM_ACCENT_CLASSES: Record<Platform, string> = {
   LINKEDIN: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
   TWITTER: "bg-foreground/10 text-foreground",
   YOUTUBE: "bg-red-500/10 text-red-600 dark:text-red-400",
+  CANVA: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-300",
 };
 
 export function PlatformIcon({ platform, className }: { platform: Platform; className?: string }) {

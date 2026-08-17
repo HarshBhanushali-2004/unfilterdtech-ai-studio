@@ -44,12 +44,24 @@ export type SocialRefreshResult = {
  * anything about the underlying vendor's error shapes.
  */
 export interface SocialProvider {
-  /** Builds the vendor's OAuth consent-screen URL to redirect the user to. */
-  getAuthorizationUrl(state: string): string;
+  /**
+   * Builds the vendor's OAuth consent-screen URL to redirect the user to.
+   * `options.codeChallenge` is optional and only meaningful to a provider
+   * whose flow requires PKCE (RFC 7636) — today, Canva
+   * (`lib/social/providers/canva.ts`). Google/Meta ignore it; adding this
+   * as an optional second parameter (rather than a new interface method)
+   * keeps every existing provider's `getAuthorizationUrl(state)` signature
+   * assignable as-is.
+   */
+  getAuthorizationUrl(state: string, options?: { codeChallenge?: string }): string;
 
-  /** Exchanges an authorization code (from the OAuth callback) for tokens
-   * and the connected account's profile/channel data. */
-  connect(code: string): Promise<SocialConnectResult>;
+  /**
+   * Exchanges an authorization code (from the OAuth callback) for tokens
+   * and the connected account's profile/channel data. `options.codeVerifier`
+   * is the PKCE counterpart to `getAuthorizationUrl`'s `codeChallenge` —
+   * same "optional, only Canva uses it today" reasoning.
+   */
+  connect(code: string, options?: { codeVerifier?: string }): Promise<SocialConnectResult>;
 
   /** Uses a stored refresh token to obtain a new access token. Not called
    * anywhere yet in this phase (no publishing/scheduling exists to need a

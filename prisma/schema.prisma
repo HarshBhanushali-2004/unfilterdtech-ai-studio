@@ -729,6 +729,7 @@ enum Platform {
   LINKEDIN
   TWITTER
   YOUTUBE
+  CANVA
 }
 
 /// Connection lifecycle for a ConnectedAccount. EXPIRED added in Social

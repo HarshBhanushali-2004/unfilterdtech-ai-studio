@@ -62,8 +62,15 @@ export function ConnectionCard({ connection }: { connection: ConnectionListItem 
   function handleConnect() {
     if (isOAuthEnabled) {
       // Real OAuth needs a full browser navigation (the vendor's consent
-      // screen, then its redirect back) — not a server action call.
-      window.location.href = `/api/social/${connection.platform.toLowerCase()}/connect`;
+      // screen, then its redirect back) — not a server action call. Canva
+      // is the one exception to the generic `/api/social/<platform>/connect`
+      // path: its flow requires PKCE and owns its own dedicated route pair
+      // (see `lib/connections/platforms.ts`'s OAUTH_ENABLED_PLATFORMS doc
+      // comment and `lib/social/providers/canva.ts`).
+      window.location.href =
+        connection.platform === "CANVA"
+          ? "/api/canva/connect"
+          : `/api/social/${connection.platform.toLowerCase()}/connect`;
       return;
     }
 

@@ -12,6 +12,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   LINKEDIN: "LinkedIn",
   TWITTER: "X (Twitter)",
   YOUTUBE: "YouTube",
+  CANVA: "Canva",
 };
 
 export const PLATFORM_DESCRIPTIONS: Record<Platform, string> = {
@@ -20,13 +21,20 @@ export const PLATFORM_DESCRIPTIONS: Record<Platform, string> = {
   LINKEDIN: "Company page posts.",
   TWITTER: "Posts and threads.",
   YOUTUBE: "Shorts and video uploads.",
+  CANVA: "Create and manage designs with Canva.",
 };
 
 /**
  * Platforms with a real OAuth provider wired in (`lib/social/index.ts`) —
  * used only by `ConnectionCard` to decide whether "Connect" performs a real
- * OAuth redirect (`/api/social/<platform>/connect`) or falls back to the
- * Phase 1 mock `connectPlatform` action for platforms not implemented yet.
+ * OAuth redirect or falls back to the Phase 1 mock `connectPlatform` action
+ * for platforms not implemented yet. Every entry here except CANVA redirects
+ * to `/api/social/<platform>/connect`; CANVA redirects to `/api/canva/connect`
+ * instead, because its OAuth flow requires PKCE and has its own dedicated
+ * route pair (`app/api/canva/connect`, `app/api/canva/oauth/callback`) rather
+ * than the generic `app/api/social/[platform]/**` ones — see
+ * `ConnectionCard.handleConnect` and `lib/social/providers/canva.ts`'s doc
+ * comment.
  *
  * Deliberately hand-duplicated from `lib/social`'s provider registry rather
  * than imported from it: `lib/social/**` reads OAuth client secrets and
@@ -36,4 +44,4 @@ export const PLATFORM_DESCRIPTIONS: Record<Platform, string> = {
  * Keep this list in sync with `PROVIDERS` in `lib/social/index.ts` by hand
  * when a new provider is added.
  */
-export const OAUTH_ENABLED_PLATFORMS: Platform[] = ["YOUTUBE", "FACEBOOK", "INSTAGRAM"];
+export const OAUTH_ENABLED_PLATFORMS: Platform[] = ["YOUTUBE", "FACEBOOK", "INSTAGRAM", "CANVA"];
