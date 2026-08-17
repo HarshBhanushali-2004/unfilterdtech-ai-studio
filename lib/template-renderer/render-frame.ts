@@ -1,4 +1,4 @@
-import { drawTextBlock, roundedRectPath } from "@/lib/creative-renderer/text-renderer"
+import { drawTextBlock, roundedRectPath, wrapText } from "@/lib/creative-renderer/text-renderer"
 import type { BrandRenderProfile, RenderContext2DWithImages, RenderImageLike } from "@/lib/creative-renderer/types"
 
 import type { FormatLayout, FrameContent, TemplateElement } from "./types"
@@ -183,20 +183,35 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
         if (!content.headline) break
 
         if (expandHeadlineThrough !== null) {
-          // Typography-first treatment: bigger, centered, filling the
-          // combined headline + media-frame region.
+          // Typography-first treatment: bigger, vertically centered within
+          // the combined headline + media-frame region, so a NO_MEDIA
+          // frame's reclaimed space is actually filled instead of leaving
+          // a large empty gap above the body copy (confirmed against real
+          // saved carousel data during Phase 1C QA — the previous fixed
+          // 0.18 offset only nudged the block down without accounting for
+          // its own height).
           const expandedHeight = expandHeadlineThrough - el.y
+          const expandedFontSize = (el.fontSize ?? 56) * 1.25
+          const lineHeightMultiplier = el.lineHeight ?? 1.15
+          const maxLines = (el.maxLines ?? 3) + 1
+          const fontFamily = nodeFontFamily()
+
+          ctx.font = `${el.fontWeight ?? "700"} ${expandedFontSize}px ${fontFamily}`
+          const lineCount = Math.min(Math.max(wrapText(ctx, content.headline, el.width).length, 1), maxLines)
+          const blockHeight = lineCount * expandedFontSize * lineHeightMultiplier
+          const startY = el.y + Math.max(0, (expandedHeight - blockHeight) / 2)
+
           drawTextBlock(ctx, {
             text: content.headline,
             x: el.x,
-            y: el.y + expandedHeight * 0.18,
+            y: startY,
             maxWidth: el.width,
-            fontSize: (el.fontSize ?? 56) * 1.25,
-            fontFamily: nodeFontFamily(),
+            fontSize: expandedFontSize,
+            fontFamily,
             fontWeight: el.fontWeight ?? "700",
             color: resolveTextColor(el, brand, pageBackground, false),
-            lineHeightMultiplier: el.lineHeight ?? 1.15,
-            maxLines: (el.maxLines ?? 3) + 1,
+            lineHeightMultiplier,
+            maxLines,
             align: "left",
           })
           break
@@ -266,8 +281,24 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
         if (!content.cta) break
 
         const fontFamily = nodeFontFamily()
-        ctx.font = `${el.fontWeight ?? "700"} ${el.fontSize ?? 26}px ${fontFamily}`
-        const paddingX = (el.fontSize ?? 26) * 1.1
+        let fontSize = el.fontSize ?? 26
+        ctx.font = `${el.fontWeight ?? "700"} ${fontSize}px ${fontFamily}`
+        let paddingX = fontSize * 1.1
+
+        // A long CTA could measure wider than the element's own max width —
+        // previously the pill background was clamped to `el.width` but the
+        // text itself was drawn at full size regardless, so it visibly
+        // overflowed past the pill and into neighboring elements (confirmed
+        // against real saved Post data during Phase 1C QA). Shrink the font
+        // just enough that the pill can actually contain its own label.
+        const naturalWidth = ctx.measureText(content.cta).width + paddingX * 2
+        if (naturalWidth > el.width) {
+          const scale = Math.max(0.6, el.width / naturalWidth)
+          fontSize *= scale
+          ctx.font = `${el.fontWeight ?? "700"} ${fontSize}px ${fontFamily}`
+          paddingX = fontSize * 1.1
+        }
+
         const pillWidth = Math.min(el.width, ctx.measureText(content.cta).width + paddingX * 2)
         const bg = resolveBackgroundColor(el.background, brand, pageBackground) ?? brand.accentColor
 
