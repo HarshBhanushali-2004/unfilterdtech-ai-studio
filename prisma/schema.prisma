@@ -93,6 +93,21 @@ enum CreationStatus {
   PUBLISHED
 }
 
+/// Lifecycle of a Creation's optional Canva link (Phase 2 — "Edit in Canva",
+/// see CANVA_NEXT_PHASE_PLAN.md). NOT_LINKED is the default/absent state for
+/// every existing and newly-saved Creation; the others track one round trip
+/// through Design Import → manual editing → Export. Mirrors the shape
+/// `MediaResolutionStatus` already uses for AI-rendered media, so the
+/// Review page can reuse the same status-pill visual language.
+enum CanvaSyncStatus {
+  NOT_LINKED
+  IMPORTING
+  EDITING
+  EXPORTING
+  SYNCED
+  FAILED
+}
+
 model Project {
   id          String  @id @default(cuid())
   name        String
@@ -182,6 +197,19 @@ model Creation {
 
   model String?
 
+  /// Phase 2 — "Edit in Canva" (see CANVA_NEXT_PHASE_PLAN.md). Set only for
+  /// POST creations that have gone through Design Import at least once;
+  /// every other Creation leaves these five columns at their defaults.
+  /// Deliberately on Creation, not on PostPlan — Creation.id is stable
+  /// across a Regenerate (which creates a *new* PostPlan row), so a Canva
+  /// link tied to the Creation survives that naturally instead of silently
+  /// pointing at an orphaned plan.
+  canvaDesignId     String?
+  canvaEditUrl      String?         @db.Text
+  canvaViewUrl      String?         @db.Text
+  canvaSyncStatus   CanvaSyncStatus @default(NOT_LINKED)
+  canvaLastSyncedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -196,6 +224,7 @@ model Creation {
   @@index([audioAssetId])
   @@index([createdAt])
   @@index([status])
+  @@index([canvaSyncStatus])
 }
 
 /// A cached, structured knowledge brief for a topic — the output of the

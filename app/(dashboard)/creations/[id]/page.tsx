@@ -46,31 +46,39 @@ export default async function CreationPage({
   const { id } = await params;
   const { from: requestedFrom } = await searchParams;
 
-  const creation = await prisma.creation.findUnique({
-    where: {
-      id,
-    },
-    include: {
-      project: {
-        include: {
-          brandKit: {
-            select: {
-              id: true,
-              name: true,
+  const [creation, canvaAccount] = await Promise.all([
+    prisma.creation.findUnique({
+      where: {
+        id,
+      },
+      include: {
+        project: {
+          include: {
+            brandKit: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
           },
         },
+        research: true,
+        planner: true,
+        visualPrompt: true,
+        carouselPlan: true,
       },
-      research: true,
-      planner: true,
-      visualPrompt: true,
-      carouselPlan: true,
-    },
-  });
+    }),
+    // Only ReviewActionBar's "Edit in Canva"/"Connect Canva" button label
+    // needs this (Phase 2, see CANVA_NEXT_PHASE_PLAN.md §9/§10) — a cheap
+    // single-row lookup, same query shape `getConnections()` already runs.
+    prisma.connectedAccount.findFirst({ where: { platform: "CANVA" } }),
+  ]);
 
   if (!creation) {
     notFound();
   }
+
+  const canvaConnected = canvaAccount?.status === "CONNECTED";
 
   const origin = resolveOrigin(requestedFrom, !!creation.project);
 
@@ -223,6 +231,11 @@ export default async function CreationPage({
         status={creation.status}
         scheduledAt={creation.scheduledAt?.toISOString() ?? null}
         deleteRedirectTo={redirectTo}
+        contentType={creation.contentType}
+        canvaConnected={canvaConnected}
+        canvaSyncStatus={creation.canvaSyncStatus}
+        canvaEditUrl={creation.canvaEditUrl}
+        canvaLastSyncedAt={creation.canvaLastSyncedAt?.toISOString() ?? null}
       />
     </div>
   );

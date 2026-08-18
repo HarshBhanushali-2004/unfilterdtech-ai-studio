@@ -251,6 +251,27 @@ export async function POST(_request: Request, { params }: RouteContext) {
         brandKit: project?.brandKit ?? null,
         forceRegenerate: true,
       });
+
+      // Phase 2 data-safety guard (see CANVA_NEXT_PHASE_PLAN.md §11/§12):
+      // the image just generated above overwrites PostMedia.renderedImageUrl
+      // unconditionally, same as it always has — so any existing Canva
+      // link/edit is now stale relative to the new content. Clear it rather
+      // than leave `canvaSyncStatus: EDITING`/`SYNCED` silently pointing at
+      // an orphaned design as if it still matched what's on screen. The
+      // client-side confirmation before calling this route at all
+      // (`ReviewActionBar`) is the actual "don't silently destroy Canva
+      // work" warning; this is the server-side half — honest state, not a
+      // prevention.
+      await prisma.creation.update({
+        where: { id },
+        data: {
+          canvaDesignId: null,
+          canvaEditUrl: null,
+          canvaViewUrl: null,
+          canvaLastSyncedAt: null,
+          canvaSyncStatus: "NOT_LINKED",
+        },
+      });
     } else if (storyPlan) {
       const project = creation.projectId
         ? await prisma.project.findUnique({ where: { id: creation.projectId }, include: { brandKit: true } })

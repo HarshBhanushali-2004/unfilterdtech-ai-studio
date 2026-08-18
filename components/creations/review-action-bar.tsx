@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, CheckCircle2, RefreshCcw, Send, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, ExternalLink, RefreshCcw, RotateCcw, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { CreationStatus } from "@prisma/client";
+import type { CanvaSyncStatus, ContentType, CreationStatus } from "@prisma/client";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CanvaStatusPill } from "@/components/creations/canva-status-pill";
 import { formatDateTime } from "@/lib/format-date";
 
 const STATUS_LABEL: Record<CreationStatus, string> = {
@@ -55,6 +56,13 @@ type ReviewActionBarProps = {
   status: CreationStatus;
   scheduledAt: string | null;
   deleteRedirectTo: string;
+  /** Phase 2 — "Edit in Canva" (see CANVA_NEXT_PHASE_PLAN.md §9) is scoped
+   * to POST only; every prop below is ignored for any other content type. */
+  contentType: ContentType;
+  canvaConnected: boolean;
+  canvaSyncStatus: CanvaSyncStatus;
+  canvaEditUrl: string | null;
+  canvaLastSyncedAt: string | null;
 };
 
 /**
@@ -68,6 +76,11 @@ export function ReviewActionBar({
   status,
   scheduledAt,
   deleteRedirectTo,
+  contentType,
+  canvaConnected,
+  canvaSyncStatus,
+  canvaEditUrl,
+  canvaLastSyncedAt,
 }: ReviewActionBarProps) {
   const router = useRouter();
 
@@ -84,6 +97,19 @@ export function ReviewActionBar({
   const [scheduling, setScheduling] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Phase 2 — "Edit in Canva" (see CANVA_NEXT_PHASE_PLAN.md §9). Local
+  // mirrors of the Canva props so a click updates the bar immediately
+  // without waiting on `router.refresh()`'s server round trip — same
+  // pattern `currentStatus`/`currentScheduledAt` already use above.
+  const [currentCanvaStatus, setCurrentCanvaStatus] = useState(canvaSyncStatus);
+  const [currentCanvaEditUrl, setCurrentCanvaEditUrl] = useState(canvaEditUrl);
+  const [currentCanvaLastSyncedAt, setCurrentCanvaLastSyncedAt] = useState(canvaLastSyncedAt);
+  const [canvaBusy, setCanvaBusy] = useState(false);
+  const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
+
+  const isPost = contentType === "POST";
+  const canvaLinked = currentCanvaStatus !== "NOT_LINKED";
 
   async function updateStatus(
     body: { status: CreationStatus; scheduledAt?: string },
@@ -148,6 +174,12 @@ export function ReviewActionBar({
       }
 
       toast.success("Regenerated — caption, hashtags, and images refreshed");
+      // The regenerate route clears any Canva link for a POST as part of
+      // the same request (see its own doc comment) — reflect that locally
+      // rather than waiting on router.refresh() to catch up.
+      setCurrentCanvaStatus("NOT_LINKED");
+      setCurrentCanvaEditUrl(null);
+      setCurrentCanvaLastSyncedAt(null);
       router.refresh();
     } catch (error) {
       toast.error(
@@ -155,6 +187,128 @@ export function ReviewActionBar({
       );
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  /** Regenerate itself never asks for confirmation — except here: a POST
+   * with an in-progress or already-synced Canva edit is about to have that
+   * work silently orphaned (see CANVA_NEXT_PHASE_PLAN.md §11/§12's
+   * data-safety note). Every other case behaves exactly as it always has —
+   * immediate regenerate, no dialog. */
+  function handleRegenerateClick() {
+    if (isPost && (currentCanvaStatus === "EDITING" || currentCanvaStatus === "SYNCED")) {
+      setRegenerateConfirmOpen(true);
+      return;
+    }
+    void regenerate();
+  }
+
+  function openCanvaTab(): Window | null {
+    // Opened synchronously, inside the click handler, before any `await` —
+    // otherwise most browsers' popup blockers silently swallow a
+    // `window.open` call that happens after an async gap.
+    return window.open("", "_blank", "noopener,noreferrer");
+  }
+
+  async function editInCanva() {
+    // Known client-side already (server-rendered prop) — skip the round
+    // trip and go straight to the existing OAuth flow rather than opening a
+    // tab we'd only have to close again.
+    if (!canvaConnected) {
+      window.location.href = "/api/canva/connect";
+      return;
+    }
+
+    // Already linked to a design (CANVA_NEXT_PHASE_PLAN.md §9, scenario 7:
+    // "the same design again") — reopen the existing edit_url rather than
+    // calling Design Import a second time, which would create a *second*,
+    // disconnected Canva design for the same post.
+    if (canvaLinked && currentCanvaEditUrl) {
+      window.open(currentCanvaEditUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const pendingTab = openCanvaTab();
+    setCanvaBusy(true);
+
+    try {
+      const res = await fetch(`/api/creations/${creationId}/canva/create`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        pendingTab?.close();
+        if (data.needsConnect) {
+          // The token expired between page load and this click (e.g. a
+          // failed silent refresh) — the connect route re-establishes it.
+          window.location.href = "/api/canva/connect";
+          return;
+        }
+        throw new Error(data.error);
+      }
+
+      if (pendingTab) {
+        pendingTab.location.href = data.editUrl;
+      } else {
+        window.open(data.editUrl, "_blank", "noopener,noreferrer");
+      }
+
+      setCurrentCanvaStatus("EDITING");
+      setCurrentCanvaEditUrl(data.editUrl);
+      toast.success("Opened in Canva — edit there, then come back and click Sync back from Canva.");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to open this post in Canva right now.");
+    } finally {
+      setCanvaBusy(false);
+    }
+  }
+
+  async function syncFromCanva() {
+    setCanvaBusy(true);
+
+    try {
+      const res = await fetch(`/api/creations/${creationId}/canva/sync`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.needsConnect) {
+          window.location.href = "/api/canva/connect";
+          return;
+        }
+        throw new Error(data.error);
+      }
+
+      setCurrentCanvaStatus("SYNCED");
+      setCurrentCanvaLastSyncedAt(new Date().toISOString());
+      toast.success("Synced the latest version from Canva");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to sync back from Canva right now.");
+    } finally {
+      setCanvaBusy(false);
+    }
+  }
+
+  async function resetToAiVersion() {
+    setCanvaBusy(true);
+
+    try {
+      const res = await fetch(`/api/creations/${creationId}/canva/reset`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
+      setCurrentCanvaStatus("NOT_LINKED");
+      setCurrentCanvaEditUrl(null);
+      setCurrentCanvaLastSyncedAt(null);
+      toast.success("Canva link cleared — this post's current image is unchanged.");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to reset the Canva link right now.");
+    } finally {
+      setCanvaBusy(false);
     }
   }
 
@@ -182,19 +336,22 @@ export function ReviewActionBar({
     }
   }
 
-  const busy = publishing || regenerating || deleting;
+  const busy = publishing || regenerating || deleting || canvaBusy;
 
   return (
     <>
       <div className="sticky bottom-0 z-10 -mx-4 mt-10 border-t bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span>Status:</span>
             <Badge variant="outline" className={STATUS_BADGE_CLASS[currentStatus]}>
               {STATUS_LABEL[currentStatus]}
             </Badge>
             {currentStatus === "SCHEDULED" && currentScheduledAt && (
               <span>for {formatDateTime(currentScheduledAt)}</span>
+            )}
+            {isPost && (
+              <CanvaStatusPill status={currentCanvaStatus} lastSyncedAt={currentCanvaLastSyncedAt} />
             )}
           </div>
 
@@ -209,10 +366,33 @@ export function ReviewActionBar({
               Delete
             </Button>
 
-            <Button variant="outline" onClick={regenerate} disabled={busy}>
+            <Button variant="outline" onClick={handleRegenerateClick} disabled={busy}>
               <RefreshCcw className={`mr-2 h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
               {regenerating ? "Regenerating..." : "Regenerate"}
             </Button>
+
+            {isPost && (
+              <>
+                <Button variant="outline" onClick={editInCanva} disabled={busy}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {canvaConnected ? "Edit in Canva" : "Connect Canva"}
+                </Button>
+
+                {canvaLinked && (
+                  <Button variant="outline" onClick={syncFromCanva} disabled={busy}>
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Sync back from Canva
+                  </Button>
+                )}
+
+                {canvaLinked && (
+                  <Button variant="ghost" onClick={resetToAiVersion} disabled={busy} className="text-muted-foreground">
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Reset to AI Version
+                  </Button>
+                )}
+              </>
+            )}
 
             <Button variant="outline" onClick={() => setScheduleOpen(true)} disabled={busy}>
               <CalendarClock className="mr-2 h-4 w-4" />
@@ -280,6 +460,36 @@ export function ReviewActionBar({
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={deleteCreation} disabled={deleting}>
               {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Phase 2 data-safety guard (CANVA_NEXT_PHASE_PLAN.md §11/§12) — only
+          ever opens when there's actual Canva work at risk (currentCanvaStatus
+          EDITING/SYNCED, checked in handleRegenerateClick); every other
+          Regenerate click skips this entirely, unchanged from before. */}
+      <AlertDialog open={regenerateConfirmOpen} onOpenChange={setRegenerateConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate and lose the Canva edit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {currentCanvaStatus === "SYNCED"
+                ? "This post's image was synced from Canva. Regenerating replaces it with a brand-new AI version and disconnects the Canva link — your Canva-edited version won't be recoverable from here."
+                : "This post has a Canva design open for editing. Regenerating replaces its image with a brand-new AI version and disconnects the Canva link — any changes made in Canva won't be recoverable from here."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={regenerating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={regenerating}
+              onClick={() => {
+                setRegenerateConfirmOpen(false);
+                void regenerate();
+              }}
+            >
+              {regenerating ? "Regenerating..." : "Regenerate anyway"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

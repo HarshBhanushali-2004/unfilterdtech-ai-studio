@@ -1,75 +1,21 @@
 import { drawTextBlock, roundedRectPath, wrapText } from "@/lib/creative-renderer/text-renderer"
 import type { BrandRenderProfile, RenderContext2DWithImages, RenderImageLike } from "@/lib/creative-renderer/types"
 
+import { autoTextColor, isColorDark, resolveBackgroundColor, resolvePageBackground, resolveTextColor } from "./color-resolve"
 import type { FormatLayout, FrameContent, TemplateElement } from "./types"
 
-// ---- Small, local color-math helpers -------------------------------------
-// Deliberately separate from `lib/creative-renderer/color-analysis.ts`,
-// which samples *pixel data* from a drawn photo (`getImageData`) to decide
-// contrast — this renderer never overlays text on top of media (the media
-// frame is its own contained element on every format's layout, never
-// full-bleed-under-text), so every text element sits on a background color
-// this renderer already knows analytically. Sampling pixels for a color we
-// chose ourselves would be pointless work, not "reuse."
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const match = hex.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
-  if (!match) return null
-
-  const value = match[1]
-  const expanded = value.length === 3 ? value.split("").map((c) => c + c).join("") : value
-
-  return {
-    r: parseInt(expanded.slice(0, 2), 16),
-    g: parseInt(expanded.slice(2, 4), 16),
-    b: parseInt(expanded.slice(4, 6), 16),
-  }
-}
-
-/** Perceptual-luminance darkness check. Unparseable input is treated as dark — the safer default (white text stays legible on almost anything; the reverse doesn't). */
-function isColorDark(color: string): boolean {
-  const rgb = hexToRgb(color)
-  if (!rgb) return true
-
-  const luminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b
-  return luminance < 140
-}
-
-function autoTextColor(surfaceColor: string): string {
-  return isColorDark(surfaceColor) ? "#FFFFFF" : "#14151A"
-}
-
-function autoMutedTextColor(surfaceColor: string): string {
-  return isColorDark(surfaceColor) ? "rgba(255,255,255,0.78)" : "rgba(20,21,26,0.72)"
-}
-
-// ---- Element-level resolution ---------------------------------------------
-
-function resolveBackgroundColor(value: TemplateElement["background"], brand: BrandRenderProfile, pageBackground: string): string | null {
-  switch (value) {
-    case undefined:
-    case "transparent":
-      return null
-    case "auto":
-      return pageBackground
-    case "brand-primary":
-      return brand.primaryColor
-    case "brand-accent":
-      return brand.accentColor
-    default:
-      return value
-  }
-}
-
-function resolveTextColor(el: TemplateElement, brand: BrandRenderProfile, pageBackground: string, muted: boolean): string {
-  const elementSurface = resolveBackgroundColor(el.background, brand, pageBackground) ?? pageBackground
-
-  if (el.color === "auto" || el.color === undefined) {
-    return muted ? autoMutedTextColor(elementSurface) : autoTextColor(elementSurface)
-  }
-
-  return el.color
-}
+// Color resolution (`"auto"` / `"brand-primary"` / `"brand-accent"` →
+// literal colors, contrast-aware text color) lives in `./color-resolve.ts`,
+// shared with `lib/canva/pptx-builder.ts` (Phase 2 — see
+// CANVA_NEXT_PHASE_PLAN.md) so both renderers agree on what a given
+// `TemplateElement` looks like. Deliberately separate from
+// `lib/creative-renderer/color-analysis.ts`, which samples *pixel data*
+// from a drawn photo (`getImageData`) to decide contrast — this renderer
+// never overlays text on top of media (the media frame is its own
+// contained element on every format's layout, never full-bleed-under-text),
+// so every text element sits on a background color this renderer already
+// knows analytically. Sampling pixels for a color we chose ourselves would
+// be pointless work, not "reuse."
 
 /** Phase 1 bundles only Inter for server-side rendering (see `lib/creative-renderer/node-canvas.ts`) — every RendererFont choice resolves to it for now; this is the single place that changes once more fonts are bundled. */
 function nodeFontFamily(): string {
@@ -128,10 +74,7 @@ export function renderFrame(ctx: RenderContext2DWithImages, input: RenderFrameIn
   const { layout, content, media, noMedia, logo, brand, brandLabel } = input
   const { width, height } = layout.canvas
 
-  const pageBackground =
-    layout.background.color === "auto" || layout.background.color === "brand-primary"
-      ? brand.primaryColor
-      : layout.background.color
+  const pageBackground = resolvePageBackground(layout.background, brand)
 
   ctx.fillStyle = pageBackground
   ctx.fillRect(0, 0, width, height)
