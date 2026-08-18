@@ -133,3 +133,67 @@ export async function exportDesignAsPng(accessToken: string, designId: string): 
   const arrayBuffer = await fileResponse.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
+
+/**
+ * Exports a (possibly multi-page) Canva design as PNG and downloads every
+ * page's image server-side — the Carousel counterpart to
+ * `exportDesignAsPng`, added rather than changing that function's return
+ * type so the working Post "Sync back" path is untouched. Canva's own
+ * documented behavior: a multi-page design's export job returns one
+ * download URL per page, "sorted by page order" — so `urls[0]` is slide 1,
+ * `urls[1]` is slide 2, and so on, matching the order `buildCarouselPptx`
+ * wrote the slides in. Returns the pages in that same order.
+ */
+export async function exportDesignPages(accessToken: string, designId: string): Promise<Buffer[]> {
+  const jobId = await createExportJob(accessToken, designId);
+
+  const startedAt = Date.now();
+  let job = await getExportJob(accessToken, jobId);
+
+  while (job.status === "in_progress") {
+    if (Date.now() - startedAt > MAX_POLL_MS) {
+      throw new CanvaApiError("timeout", "Canva's design export is taking longer than expected. Please try again.");
+    }
+    await sleep(POLL_INTERVAL_MS);
+    job = await getExportJob(accessToken, jobId);
+  }
+
+  if (job.status === "failed") {
+    console.error("[Canva] Export job failed:", job.error);
+    throw new CanvaApiError(
+      "request_failed",
+      job.error?.code === "license_required"
+        ? "This design uses a premium Canva element that requires a paid plan to export."
+        : "Canva was unable to complete the export."
+    );
+  }
+
+  const downloadUrls = job.urls ?? [];
+  if (downloadUrls.length === 0) {
+    throw new CanvaApiError("invalid_response", "Canva's export job succeeded but returned no download URLs.");
+  }
+
+  return Promise.all(
+    downloadUrls.map(async (url, index) => {
+      let fileResponse: Response;
+      try {
+        fileResponse = await fetch(url);
+      } catch (error) {
+        throw new CanvaApiError(
+          "network_error",
+          `Failed to download page ${index + 1} of the exported design: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+
+      if (!fileResponse.ok) {
+        throw new CanvaApiError(
+          "request_failed",
+          `Failed to download page ${index + 1} of the exported design (${fileResponse.status}).`
+        );
+      }
+
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    })
+  );
+}

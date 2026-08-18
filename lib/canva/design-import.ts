@@ -101,12 +101,16 @@ async function getImportJob(accessToken: string, jobId: string): Promise<ImportJ
 }
 
 /**
- * Imports a `.pptx` (built by `lib/canva/pptx-builder.ts`) as a new Canva
- * design, polling until the async job resolves. Returns just what the
- * caller needs to persist and hand back to the browser — never the raw
- * Canva job/response body, which could carry vendor diagnostic detail.
+ * Imports a `.pptx` (built by `lib/canva/pptx-builder.ts` — either
+ * `buildPostPptx`'s single slide or `buildCarouselPptx`'s multi-slide deck,
+ * this endpoint doesn't care which) as a new Canva design, polling until
+ * the async job resolves. Returns just what the caller needs to persist and
+ * hand back to the browser — never the raw Canva job/response body, which
+ * could carry vendor diagnostic detail. Format-agnostic despite the
+ * original Post-only name this function shipped with — renamed once a
+ * second caller (Carousel) needed the identical logic.
  */
-export async function importPostDesign(
+export async function importDesign(
   accessToken: string,
   pptxBuffer: Buffer,
   title: string

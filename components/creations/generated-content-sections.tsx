@@ -5,6 +5,7 @@ import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HashtagsCard } from "@/components/creations/hashtags-card";
 import { PostCard } from "@/components/creations/post-card";
+import { PostContentCard, type PostPlanContent } from "@/components/creations/post-content-card";
 import { CaptionCard } from "@/components/creations/caption-card";
 import { CarouselCard, type CarouselSlide } from "@/components/creations/carousel-card";
 import { CarouselSlidesGallery } from "@/components/creations/carousel-slides-gallery";
@@ -46,12 +47,50 @@ type GeneratedContentSectionsProps = {
   /** Phase 1C (see AGENTS.md) — when set, the "Reel" tab shows the scene storyboard preview (static images, honestly labeled — no video composition exists) above the legacy text script, the same pattern as `carouselPlanId`. */
   reelPlanId?: string | null;
   /**
+   * Content/media separation: the Plan's own structured text —
+   * `CarouselPlan.data.slides`/`StoryPlan.data.frames`/`ReelPlan.data`,
+   * adapted into the shape `CarouselCard`/`StoryCard`/`ReelCard` already
+   * render (see `lib/creations/plan-content-views.ts`), and
+   * `PostPlan.data`'s headline/body/cta for `PostContentCard`. Previously,
+   * once a Plan existed, its tab showed *only* the rendered media gallery
+   * — a failed slide/frame/scene's text was invisible, even though the
+   * text itself was safely stored the whole time. Passing it here makes
+   * it always render (as a card below the gallery), independent of
+   * whether that item's media succeeded. `null`/omitted for a pre-Plan
+   * creation, which keeps falling back to the legacy `carousel`/`story`/
+   * `reel` props exactly as before.
+   */
+  carouselPlanSlides?: CarouselSlide[] | null;
+  storyPlanFrames?: StoryFrame[] | null;
+  reelPlanContent?: Reel | null;
+  postPlanContent?: PostPlanContent | null;
+  /**
    * Which tabs to show, in order — defaults to all six. The Review page
    * passes a trimmed set (no "Hashtags"/"Post") since those already have
    * their own top-level sections there (see CLAUDE.md Section 12); the
    * Studio's live preview keeps the full default.
    */
   tabs?: readonly TabValue[];
+  /**
+   * A value that changes whenever this creation's persisted media might
+   * have changed server-side (Regenerate, Canva Sync back) — the Review
+   * page passes `creation.updatedAt`. Used only as the `key` on the four
+   * media-gallery client components below.
+   *
+   * Why: those galleries fetch their own data once on mount and only poll
+   * while a slot is non-terminal (PENDING/RESOLVING/RENDERING) — see
+   * `CarouselSlidesGallery`'s doc comment. Once every slot reaches
+   * COMPLETED/FAILED, polling stops. `router.refresh()` (what Regenerate/
+   * Sync back call after mutating) re-fetches this Server Component's data,
+   * but does **not** remount an already-mounted Client Component with the
+   * same props — so a gallery that had already gone quiet keeps showing
+   * stale media/errors after a successful Regenerate or Sync back, until
+   * the next full page load. Changing `key` forces React to tear down and
+   * recreate the gallery instead, which re-triggers its fetch. The Studio's
+   * live preview (which never mutates a saved creation) omits this prop
+   * and keeps its previous behavior.
+   */
+  mediaRefreshKey?: string;
 };
 
 function EmptyTab({ label }: { label: string }) {
@@ -77,9 +116,21 @@ export function GeneratedContentSections({
   postPlanId,
   storyPlanId,
   reelPlanId,
+  carouselPlanSlides,
+  storyPlanFrames,
+  reelPlanContent,
+  postPlanContent,
   tabs = ALL_TABS.map((tab) => tab.value),
+  mediaRefreshKey,
 }: GeneratedContentSectionsProps) {
   const activeTabs = ALL_TABS.filter((tab) => tabs.includes(tab.value));
+
+  // Prefer the Plan's own text when it exists — it's the source of truth
+  // (CLAUDE.md Section 12c) — falling back to the legacy flat field only
+  // for a pre-Plan creation. Never a mix of the two.
+  const carouselTextSlides = carouselPlanSlides && carouselPlanSlides.length > 0 ? carouselPlanSlides : carousel;
+  const storyTextFrames = storyPlanFrames && storyPlanFrames.length > 0 ? storyPlanFrames : story;
+  const reelContent = reelPlanContent ?? reel;
   const [activeTab, setActiveTab] = React.useState<string>(activeTabs[0]?.value ?? "caption");
 
   return (
@@ -117,35 +168,50 @@ export function GeneratedContentSections({
           </TabsContent>
 
           <TabsContent value="post" className="mt-0 space-y-4">
-            {postPlanId && <PostMediaPreview postPlanId={postPlanId} />}
+            {postPlanId && <PostMediaPreview key={mediaRefreshKey} postPlanId={postPlanId} />}
+            {postPlanContent && <PostContentCard content={postPlanContent} />}
             <PostCard caption={caption} hashtags={hashtags} />
           </TabsContent>
 
-          <TabsContent value="carousel" className="mt-0">
-            {carouselPlanId ? (
-              <CarouselSlidesGallery carouselPlanId={carouselPlanId} slideCount={carousel?.length ?? 4} />
-            ) : carousel && carousel.length > 0 ? (
-              <CarouselCard slides={carousel} />
+          <TabsContent value="carousel" className="mt-0 space-y-6">
+            {carouselPlanId && (
+              <CarouselSlidesGallery
+                key={mediaRefreshKey}
+                carouselPlanId={carouselPlanId}
+                slideCount={carouselTextSlides?.length ?? 4}
+              />
+            )}
+            {carouselTextSlides && carouselTextSlides.length > 0 ? (
+              <CarouselCard slides={carouselTextSlides} />
             ) : (
-              <EmptyTab label="carousel slides" />
+              !carouselPlanId && <EmptyTab label="carousel slides" />
             )}
           </TabsContent>
 
-          <TabsContent value="stories" className="mt-0">
-            {storyPlanId ? (
-              <StoryFramesGallery storyPlanId={storyPlanId} frameCount={story?.length ?? 4} />
-            ) : story && story.length > 0 ? (
-              <StoryCard stories={story} />
+          <TabsContent value="stories" className="mt-0 space-y-6">
+            {storyPlanId && (
+              <StoryFramesGallery
+                key={mediaRefreshKey}
+                storyPlanId={storyPlanId}
+                frameCount={storyTextFrames?.length ?? 4}
+              />
+            )}
+            {storyTextFrames && storyTextFrames.length > 0 ? (
+              <StoryCard stories={storyTextFrames} />
             ) : (
-              <EmptyTab label="story frames" />
+              !storyPlanId && <EmptyTab label="story frames" />
             )}
           </TabsContent>
 
           <TabsContent value="reel" className="mt-0 space-y-4">
             {reelPlanId && (
-              <ReelScenesGallery reelPlanId={reelPlanId} sceneCount={reel?.scenes.length ?? 5} />
+              <ReelScenesGallery
+                key={mediaRefreshKey}
+                reelPlanId={reelPlanId}
+                sceneCount={reelContent?.scenes.length ?? 5}
+              />
             )}
-            {reel ? <ReelCard reel={reel} /> : !reelPlanId && <EmptyTab label="reel content" />}
+            {reelContent ? <ReelCard reel={reelContent} /> : !reelPlanId && <EmptyTab label="reel content" />}
           </TabsContent>
         </div>
       </Tabs>

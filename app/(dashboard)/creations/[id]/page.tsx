@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import type { ContentType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { CreationActions } from "@/components/creations/creation-actions";
@@ -8,6 +9,7 @@ import { GeneratedContentSections } from "@/components/creations/generated-conte
 import { GeneratedImagesGallery } from "@/components/creations/generated-images-gallery";
 import { HashtagsCard } from "@/components/creations/hashtags-card";
 import { PostCard } from "@/components/creations/post-card";
+import { PostContentCard } from "@/components/creations/post-content-card";
 import { PostMediaPreview } from "@/components/creations/post-media-preview";
 import { ReviewActionBar } from "@/components/creations/review-action-bar";
 import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
@@ -21,6 +23,11 @@ import {
 } from "@/lib/ai";
 import { z } from "zod";
 import type { CarouselSlide, StoryFrame, ReelContent } from "@/lib/ai/types";
+import { getCarouselPlanById } from "@/lib/carousel-plan/service";
+import { getPostPlanById } from "@/lib/post-plan/service";
+import { getStoryPlanById } from "@/lib/story-plan/service";
+import { getReelPlanById } from "@/lib/reel-plan/service";
+import { carouselPlanToSlides, reelPlanToReel, storyPlanToFrames } from "@/lib/creations/plan-content-views";
 
 /**
  * Resolves which top-level section this creation is being viewed "through" —
@@ -35,6 +42,28 @@ function resolveOrigin(requestedFrom: string | undefined, hasProject: boolean): 
   if (requestedFrom === "history") return "history";
   return hasProject ? "projects" : "history";
 }
+
+/**
+ * The Review page must stay format-aware (CLAUDE.md Section 12/12c): a
+ * Creation has exactly one primary `contentType`, but the legacy flat
+ * `carousel`/`story`/`reel` columns on every `Creation` row are populated
+ * regardless of which format was actually selected — `buildInstagramContentPrompt`
+ * explicitly instructs Gemini to "populate every field, including formats
+ * that were not explicitly requested" (`lib/ai/prompt-builder.ts`), purely
+ * for backward-compatible Copy/Download. Showing all three format tabs
+ * unconditionally (the previous behavior) meant e.g. a CAROUSEL creation
+ * displayed real-looking "Stories"/"Reel" tabs full of content the user
+ * never asked for and that isn't this creation's actual format — exactly
+ * the "looks like every creation supports every format" confusion this
+ * maps away. POST has no entry here on purpose: its content already has
+ * its own dedicated "Publishing Preview" section below, not a tab.
+ */
+const PRIMARY_FORMAT_TAB: Record<ContentType, "carousel" | "stories" | "reel" | null> = {
+  POST: null,
+  CAROUSEL: "carousel",
+  STORY: "stories",
+  REEL: "reel",
+};
 
 export default async function CreationPage({
   params,
@@ -80,6 +109,30 @@ export default async function CreationPage({
 
   const canvaConnected = canvaAccount?.status === "CONNECTED";
 
+  // Content/media separation (see lib/creations/plan-content-views.ts):
+  // each Plan's own structured text, fetched independently of whether its
+  // media ever succeeded — a failed slide/frame/scene's text must still be
+  // readable here. Reuses the exact same `getXPlanById` service functions
+  // Regenerate and the Canva "Edit in Canva" route already call; no new
+  // data-fetching pattern.
+  const [carouselPlanResult, postPlanResult, storyPlanResult, reelPlanResult] = await Promise.all([
+    creation.carouselPlanId ? getCarouselPlanById(creation.carouselPlanId) : Promise.resolve(null),
+    creation.postPlanId ? getPostPlanById(creation.postPlanId) : Promise.resolve(null),
+    creation.storyPlanId ? getStoryPlanById(creation.storyPlanId) : Promise.resolve(null),
+    creation.reelPlanId ? getReelPlanById(creation.reelPlanId) : Promise.resolve(null),
+  ]);
+
+  const carouselPlanSlides = carouselPlanResult ? carouselPlanToSlides(carouselPlanResult.data) : null;
+  const storyPlanFrames = storyPlanResult ? storyPlanToFrames(storyPlanResult.data) : null;
+  const reelPlanContent = reelPlanResult ? reelPlanToReel(reelPlanResult.data) : null;
+  const postPlanContent = postPlanResult
+    ? {
+        headline: postPlanResult.data.headline,
+        body: postPlanResult.data.body,
+        cta: postPlanResult.data.cta,
+      }
+    : null;
+
   const origin = resolveOrigin(requestedFrom, !!creation.project);
 
   // Canonicalize the URL so it always carries the resolved origin — the
@@ -107,6 +160,14 @@ export default async function CreationPage({
     ? (creation.story as unknown as StoryFrame[])
     : null;
   const reel = creation.reel ? (creation.reel as unknown as ReelContent) : null;
+
+  // Caption is always shown; the only other tab shown is the one matching
+  // this creation's actual contentType (see PRIMARY_FORMAT_TAB above) — never
+  // a fixed list of all four formats.
+  const primaryFormatTab = PRIMARY_FORMAT_TAB[creation.contentType];
+  const generatedContentTabs = (
+    primaryFormatTab ? (["caption", primaryFormatTab] as const) : (["caption"] as const)
+  );
 
   const research = creation.research
     ? researchObjectSchema.safeParse(creation.research.data)
@@ -190,7 +251,12 @@ export default async function CreationPage({
             carouselPlanId={creation.carouselPlanId}
             storyPlanId={creation.storyPlanId}
             reelPlanId={creation.reelPlanId}
-            tabs={["caption", "carousel", "stories", "reel"]}
+            carouselPlanSlides={carouselPlanSlides}
+            storyPlanFrames={storyPlanFrames}
+            reelPlanContent={reelPlanContent}
+            postPlanContent={postPlanContent}
+            tabs={generatedContentTabs}
+            mediaRefreshKey={creation.updatedAt.toISOString()}
           />
         </section>
 
@@ -211,7 +277,16 @@ export default async function CreationPage({
 
         <section className="space-y-4 rounded-2xl border p-5 md:p-6">
           <h2 className="text-lg font-semibold">Publishing Preview</h2>
-          {creation.postPlanId && <PostMediaPreview postPlanId={creation.postPlanId} />}
+          {creation.postPlanId && (
+            <PostMediaPreview key={creation.updatedAt.toISOString()} postPlanId={creation.postPlanId} />
+          )}
+          {/* Content/media separation — the post's own headline/body/CTA
+              (PostPlan.data), shown independently of whether the image
+              above succeeded. Not part of GeneratedContentSections here:
+              the Review page's trimmed `tabs` prop omits "Post" entirely
+              (it already has this dedicated section), so this is the one
+              place a POST creation's structured content is visible. */}
+          {postPlanContent && <PostContentCard content={postPlanContent} />}
           <PostCard caption={creation.caption} hashtags={hashtags} />
         </section>
 

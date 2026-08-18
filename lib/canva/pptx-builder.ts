@@ -83,17 +83,24 @@ export type PptxBuildInput = {
   brandLabel: string
 }
 
-/** Builds the `.pptx` and returns it as a `Buffer`, ready to hand to Canva's Design Import API (`lib/canva/design-import.ts`). */
-export async function buildPostPptx(input: PptxBuildInput): Promise<Buffer> {
-  const { layout, content, mediaDataUrl, logoDataUrl, brand, brandLabel } = input
-
-  const pptx = new PptxGenJS()
-  const widthIn = pxToIn(layout.canvas.width)
-  const heightIn = pxToIn(layout.canvas.height)
-  pptx.defineLayout({ name: "UNFILTERDTECH_POST", width: widthIn, height: heightIn })
-  pptx.layout = "UNFILTERDTECH_POST"
-
-  const slide = pptx.addSlide()
+/**
+ * Draws one slide's worth of elements into an already-created `pptxgenjs`
+ * slide — the shared per-slide logic behind both `buildPostPptx` (one
+ * slide) and `buildCarouselPptx` (one call per `CarouselPlan` slide, in
+ * order — see that function below). Extracted so a multi-slide Carousel
+ * deck reuses the exact same element-drawing logic as Post, rather than a
+ * second, drifting copy of it.
+ */
+function drawSlideElements(
+  pptx: PptxGenJS,
+  slide: ReturnType<PptxGenJS["addSlide"]>,
+  layout: FormatLayout,
+  content: FrameContent,
+  mediaDataUrl: string | null,
+  logoDataUrl: string | null,
+  brand: BrandRenderProfile,
+  brandLabel: string
+): void {
   const pageBackground = resolvePageBackground(layout.background, brand)
   slide.background = { color: toPptxColor(pageBackground) }
 
@@ -264,14 +271,86 @@ export async function buildPostPptx(input: PptxBuildInput): Promise<Buffer> {
         break
       }
 
-      case "progress":
+      case "progress": {
         // Post has no page/slide counter (a single item, never a
-        // sequence) — `FrameContent.progress` is never populated for this
-        // format, so there's nothing to draw here. Left explicit rather
-        // than omitted from the switch so a future format reusing this
-        // builder can't silently forget it.
+        // sequence) — `FrameContent.progress` is never populated for that
+        // format, so this is a no-op there. A Carousel slide's `content`
+        // does set it ("3 / 6", pre-formatted exactly like `render-frame.ts`
+        // expects — see `buildCarouselPptx` below).
+        if (!content.progress) break
+        slide.addText(content.progress, {
+          x,
+          y,
+          w,
+          h,
+          fontSize: pxToPt(el.fontSize ?? 24),
+          bold: true,
+          color: toPptxColor(resolveTextColor(el, brand, pageBackground, true)),
+          fontFace: "Arial",
+          align: el.align ?? "right",
+          valign: "middle",
+        })
         break
+      }
     }
+  }
+}
+
+/** Builds a single-slide `.pptx` for a Post and returns it as a `Buffer`, ready to hand to Canva's Design Import API (`lib/canva/design-import.ts`). */
+export async function buildPostPptx(input: PptxBuildInput): Promise<Buffer> {
+  const { layout, content, mediaDataUrl, logoDataUrl, brand, brandLabel } = input
+
+  const pptx = new PptxGenJS()
+  const widthIn = pxToIn(layout.canvas.width)
+  const heightIn = pxToIn(layout.canvas.height)
+  pptx.defineLayout({ name: "UNFILTERDTECH_POST", width: widthIn, height: heightIn })
+  pptx.layout = "UNFILTERDTECH_POST"
+
+  const slide = pptx.addSlide()
+  drawSlideElements(pptx, slide, layout, content, mediaDataUrl, logoDataUrl, brand, brandLabel)
+
+  const buffer = await pptx.write({ outputType: "nodebuffer" })
+  return buffer as Buffer
+}
+
+export type CarouselPptxSlideInput = {
+  layout: FormatLayout
+  content: FrameContent
+  mediaDataUrl: string | null
+}
+
+export type CarouselPptxBuildInput = {
+  /** One entry per `CarouselPlan` slide, in `slideOrder`. Every slide shares the same canvas size (`slides[0].layout.canvas`), matching how `generateMediaForCarouselPlan` renders them — Canva Design Import needs one uniform page size for the whole deck, not a per-slide one. */
+  slides: CarouselPptxSlideInput[]
+  logoDataUrl: string | null
+  brand: BrandRenderProfile
+  brandLabel: string
+}
+
+/**
+ * Builds a multi-slide `.pptx` for a Carousel — one PPTX slide per
+ * `CarouselPlan` slide, in order, each drawn with the exact same
+ * `drawSlideElements` logic `buildPostPptx` uses. This is what lets Canva's
+ * Design Import produce a single multi-page design that preserves the
+ * carousel's slide structure (CANVA_NEXT_PHASE_PLAN.md §2's confirmed
+ * "one PPTX slide = one Canva page" behavior), rather than N separate,
+ * disconnected Canva designs.
+ */
+export async function buildCarouselPptx(input: CarouselPptxBuildInput): Promise<Buffer> {
+  const { slides, logoDataUrl, brand, brandLabel } = input
+
+  if (slides.length === 0) {
+    throw new Error("buildCarouselPptx requires at least one slide.")
+  }
+
+  const pptx = new PptxGenJS()
+  const { width, height } = slides[0].layout.canvas
+  pptx.defineLayout({ name: "UNFILTERDTECH_CAROUSEL", width: pxToIn(width), height: pxToIn(height) })
+  pptx.layout = "UNFILTERDTECH_CAROUSEL"
+
+  for (const { layout, content, mediaDataUrl } of slides) {
+    const slide = pptx.addSlide()
+    drawSlideElements(pptx, slide, layout, content, mediaDataUrl, logoDataUrl, brand, brandLabel)
   }
 
   const buffer = await pptx.write({ outputType: "nodebuffer" })

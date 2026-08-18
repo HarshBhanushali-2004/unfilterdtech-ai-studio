@@ -238,6 +238,21 @@ export async function POST(_request: Request, { params }: RouteContext) {
         brandKit: project?.brandKit ?? null,
         forceRegenerate: true,
       });
+
+      // Phase 2 data-safety guard, same as the POST branch below — every
+      // slide's renderedImageUrl was just overwritten, so any existing
+      // Canva link/edit for this carousel is now stale. See that branch's
+      // comment for the full reasoning.
+      await prisma.creation.update({
+        where: { id },
+        data: {
+          canvaDesignId: null,
+          canvaEditUrl: null,
+          canvaViewUrl: null,
+          canvaLastSyncedAt: null,
+          canvaSyncStatus: "NOT_LINKED",
+        },
+      });
     } else if (postPlan) {
       // New system is the source of truth for POST — same reasoning as the
       // CAROUSEL branch above.

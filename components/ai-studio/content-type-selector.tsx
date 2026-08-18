@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils"
 import type { ContentOption, ContentType } from "./types"
 
 const contentOptions: ContentOption[] = [
-  { value: "post", label: "Instagram Post", description: "A caption-led single post", icon: ImageIcon },
-  { value: "carousel", label: "Carousel", description: "A multi-slide story", icon: PanelsTopLeft },
-  { value: "story", label: "Story", description: "Quick vertical moments", icon: GalleryVerticalEnd },
-  { value: "reel", label: "Reel", description: "A short-form video concept", icon: Video },
+  { value: "post", label: "Post", description: "Single visual post", icon: ImageIcon },
+  { value: "carousel", label: "Carousel", description: "Multiple swipeable slides", icon: PanelsTopLeft },
+  { value: "story", label: "Story", description: "Vertical story frames", icon: GalleryVerticalEnd },
+  { value: "reel", label: "Reel", description: "Short-form video", icon: Video },
 ]
 
 export function ContentTypeSelector({ value, onChange }: { value: ContentType; onChange: (value: ContentType) => void }) {

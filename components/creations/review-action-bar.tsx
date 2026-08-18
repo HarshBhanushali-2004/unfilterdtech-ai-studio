@@ -56,8 +56,8 @@ type ReviewActionBarProps = {
   status: CreationStatus;
   scheduledAt: string | null;
   deleteRedirectTo: string;
-  /** Phase 2 — "Edit in Canva" (see CANVA_NEXT_PHASE_PLAN.md §9) is scoped
-   * to POST only; every prop below is ignored for any other content type. */
+  /** "Edit in Canva" supports POST and CAROUSEL creations; every prop below
+   * is ignored for STORY/REEL (not supported yet — see ABOUT.md). */
   contentType: ContentType;
   canvaConnected: boolean;
   canvaSyncStatus: CanvaSyncStatus;
@@ -108,7 +108,7 @@ export function ReviewActionBar({
   const [canvaBusy, setCanvaBusy] = useState(false);
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
 
-  const isPost = contentType === "POST";
+  const canvaEditableFormat = contentType === "POST" || contentType === "CAROUSEL";
   const canvaLinked = currentCanvaStatus !== "NOT_LINKED";
 
   async function updateStatus(
@@ -190,24 +190,69 @@ export function ReviewActionBar({
     }
   }
 
-  /** Regenerate itself never asks for confirmation — except here: a POST
-   * with an in-progress or already-synced Canva edit is about to have that
-   * work silently orphaned (see CANVA_NEXT_PHASE_PLAN.md §11/§12's
+  /** Regenerate itself never asks for confirmation — except here: a Post or
+   * Carousel with an in-progress or already-synced Canva edit is about to
+   * have that work silently orphaned (see CANVA_NEXT_PHASE_PLAN.md §11/§12's
    * data-safety note). Every other case behaves exactly as it always has —
    * immediate regenerate, no dialog. */
   function handleRegenerateClick() {
-    if (isPost && (currentCanvaStatus === "EDITING" || currentCanvaStatus === "SYNCED")) {
+    if (canvaEditableFormat && (currentCanvaStatus === "EDITING" || currentCanvaStatus === "SYNCED")) {
       setRegenerateConfirmOpen(true);
       return;
     }
     void regenerate();
   }
 
+  /**
+   * Writes a small, intentional loading state into a freshly-opened
+   * `about:blank` tab. Without this, the tab sits on a stark blank/white
+   * page for however long `POST .../canva/create` takes — Canva's Design
+   * Import API is a genuinely async job the server polls to completion
+   * (`lib/canva/design-import.ts`: up to a ~60s ceiling, though a small
+   * design usually resolves in a few seconds), so that wait can't be
+   * skipped. This doesn't shorten the wait — it just replaces the blank
+   * flash with a clean, on-brand "Opening Canva…" state so it reads as
+   * intentional rather than broken.
+   */
+  function writeCanvaLoadingState(tab: Window): void {
+    try {
+      tab.document.title = "Opening Canva…";
+      tab.document.head.insertAdjacentHTML(
+        "beforeend",
+        `<style>
+          :root { color-scheme: light dark; }
+          body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+                 font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+                 background:#fafafa; color:#18181b; }
+          @media (prefers-color-scheme: dark) { body { background:#0a0a0b; color:#f4f4f5; } }
+          .wrap { display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; padding:24px; }
+          .spinner { width:28px; height:28px; border-radius:9999px; border:3px solid rgba(124,58,237,0.25);
+                     border-top-color:#7c3aed; animation:spin 0.8s linear infinite; }
+          @keyframes spin { to { transform: rotate(360deg); } }
+          h1 { margin:0; font-size:15px; font-weight:600; }
+          p { margin:0; font-size:13px; opacity:0.65; max-width:280px; }
+        </style>`
+      );
+      tab.document.body.innerHTML = `
+        <div class="wrap">
+          <div class="spinner"></div>
+          <h1>Opening Canva&hellip;</h1>
+          <p>Preparing this creation for editing. This can take a few seconds.</p>
+        </div>`;
+    } catch {
+      // Cross-origin/inaccessible document in some browser configurations —
+      // fall back to the plain about:blank the browser already shows rather
+      // than failing the "Edit in Canva" action over a cosmetic loading state.
+    }
+  }
+
   function openCanvaTab(): Window | null {
     // Opened synchronously, inside the click handler, before any `await` —
     // otherwise most browsers' popup blockers silently swallow a
     // `window.open` call that happens after an async gap.
-    return window.open("", "_blank", "noopener,noreferrer");
+    const tab = window.open("", "_blank", "noopener,noreferrer");
+    if (tab) writeCanvaLoadingState(tab);
+    return tab;
   }
 
   async function editInCanva() {
@@ -257,7 +302,7 @@ export function ReviewActionBar({
       toast.success("Opened in Canva — edit there, then come back and click Sync back from Canva.");
       router.refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to open this post in Canva right now.");
+      toast.error(error instanceof Error ? error.message : "Unable to open this creation in Canva right now.");
     } finally {
       setCanvaBusy(false);
     }
@@ -303,7 +348,7 @@ export function ReviewActionBar({
       setCurrentCanvaStatus("NOT_LINKED");
       setCurrentCanvaEditUrl(null);
       setCurrentCanvaLastSyncedAt(null);
-      toast.success("Canva link cleared — this post's current image is unchanged.");
+      toast.success("Canva link cleared — this creation's current media is unchanged.");
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to reset the Canva link right now.");
@@ -350,7 +395,7 @@ export function ReviewActionBar({
             {currentStatus === "SCHEDULED" && currentScheduledAt && (
               <span>for {formatDateTime(currentScheduledAt)}</span>
             )}
-            {isPost && (
+            {canvaEditableFormat && (
               <CanvaStatusPill status={currentCanvaStatus} lastSyncedAt={currentCanvaLastSyncedAt} />
             )}
           </div>
@@ -371,7 +416,7 @@ export function ReviewActionBar({
               {regenerating ? "Regenerating..." : "Regenerate"}
             </Button>
 
-            {isPost && (
+            {canvaEditableFormat && (
               <>
                 <Button variant="outline" onClick={editInCanva} disabled={busy}>
                   <ExternalLink className="mr-2 h-4 w-4" />
@@ -475,8 +520,8 @@ export function ReviewActionBar({
             <AlertDialogTitle>Regenerate and lose the Canva edit?</AlertDialogTitle>
             <AlertDialogDescription>
               {currentCanvaStatus === "SYNCED"
-                ? "This post's image was synced from Canva. Regenerating replaces it with a brand-new AI version and disconnects the Canva link — your Canva-edited version won't be recoverable from here."
-                : "This post has a Canva design open for editing. Regenerating replaces its image with a brand-new AI version and disconnects the Canva link — any changes made in Canva won't be recoverable from here."}
+                ? "This creation's media was synced from Canva. Regenerating replaces it with a brand-new AI version and disconnects the Canva link — your Canva-edited version won't be recoverable from here."
+                : "This creation has a Canva design open for editing. Regenerating replaces its media with a brand-new AI version and disconnects the Canva link — any changes made in Canva won't be recoverable from here."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
