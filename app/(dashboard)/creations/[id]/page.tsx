@@ -1,19 +1,20 @@
 import { notFound, redirect } from "next/navigation";
-import type { ContentType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { CaptionHashtagsPanel } from "@/components/creations/caption-hashtags-panel";
+import { CarouselWorkspace } from "@/components/creations/carousel-workspace";
 import { CreationActions } from "@/components/creations/creation-actions";
 import { CreationBreadcrumbs } from "@/components/creations/creation-breadcrumbs";
 import { DeveloperDetails } from "@/components/creations/developer-details";
-import { GeneratedContentSections } from "@/components/creations/generated-content-sections";
-import { GeneratedImagesGallery } from "@/components/creations/generated-images-gallery";
-import { HashtagsCard } from "@/components/creations/hashtags-card";
-import { PostCard } from "@/components/creations/post-card";
-import { PostContentCard } from "@/components/creations/post-content-card";
-import { PostMediaPreview } from "@/components/creations/post-media-preview";
+import { FormatBadge } from "@/components/creations/format-badge";
+import { PostWorkspace } from "@/components/creations/post-workspace";
+import { ReelWorkspace } from "@/components/creations/reel-workspace";
 import { ReviewActionBar } from "@/components/creations/review-action-bar";
+import { StoryWorkspace } from "@/components/creations/story-workspace";
+import { TruncatedTitle } from "@/components/creations/truncated-title";
+import { WorkflowStatus } from "@/components/creations/workflow-status";
 import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
-import { formatDate } from "@/lib/format-date";
+import { formatRelativeTime } from "@/lib/format-date";
 import {
   researchObjectSchema,
   plannerObjectSchema,
@@ -42,28 +43,6 @@ function resolveOrigin(requestedFrom: string | undefined, hasProject: boolean): 
   if (requestedFrom === "history") return "history";
   return hasProject ? "projects" : "history";
 }
-
-/**
- * The Review page must stay format-aware (CLAUDE.md Section 12/12c): a
- * Creation has exactly one primary `contentType`, but the legacy flat
- * `carousel`/`story`/`reel` columns on every `Creation` row are populated
- * regardless of which format was actually selected — `buildInstagramContentPrompt`
- * explicitly instructs Gemini to "populate every field, including formats
- * that were not explicitly requested" (`lib/ai/prompt-builder.ts`), purely
- * for backward-compatible Copy/Download. Showing all three format tabs
- * unconditionally (the previous behavior) meant e.g. a CAROUSEL creation
- * displayed real-looking "Stories"/"Reel" tabs full of content the user
- * never asked for and that isn't this creation's actual format — exactly
- * the "looks like every creation supports every format" confusion this
- * maps away. POST has no entry here on purpose: its content already has
- * its own dedicated "Publishing Preview" section below, not a tab.
- */
-const PRIMARY_FORMAT_TAB: Record<ContentType, "carousel" | "stories" | "reel" | null> = {
-  POST: null,
-  CAROUSEL: "carousel",
-  STORY: "stories",
-  REEL: "reel",
-};
 
 export default async function CreationPage({
   params,
@@ -161,13 +140,11 @@ export default async function CreationPage({
     : null;
   const reel = creation.reel ? (creation.reel as unknown as ReelContent) : null;
 
-  // Caption is always shown; the only other tab shown is the one matching
-  // this creation's actual contentType (see PRIMARY_FORMAT_TAB above) — never
-  // a fixed list of all four formats.
-  const primaryFormatTab = PRIMARY_FORMAT_TAB[creation.contentType];
-  const generatedContentTabs = (
-    primaryFormatTab ? (["caption", primaryFormatTab] as const) : (["caption"] as const)
-  );
+  // Prefer the Plan's own text when it exists (CLAUDE.md Section 12c) —
+  // falling back to the legacy flat field only for a pre-Plan creation.
+  const carouselTextSlides = carouselPlanSlides && carouselPlanSlides.length > 0 ? carouselPlanSlides : carousel;
+  const storyTextFrames = storyPlanFrames && storyPlanFrames.length > 0 ? storyPlanFrames : story;
+  const reelContent = reelPlanContent ?? reel;
 
   const research = creation.research
     ? researchObjectSchema.safeParse(creation.research.data)
@@ -189,118 +166,109 @@ export default async function CreationPage({
     ? visualPromptObjectSchema.safeParse(creation.visualPrompt.data)
     : null;
 
+  // Bumped by every mutation that can change this creation's persisted
+  // media (Regenerate, Canva create/sync/reset — all via Prisma's own
+  // `@updatedAt`) — used as the `key` on the format workspace below so it
+  // remounts and refetches fresh media after `router.refresh()` instead of
+  // silently going stale (the same "gallery keeps showing old media after a
+  // successful mutation" bug the previous review-page pass fixed).
+  const mediaRefreshKey = creation.updatedAt.toISOString();
+
   return (
-    <div className="space-y-8 pb-4">
+    <div className="space-y-10 pb-4">
       <CreationBreadcrumbs
         origin={origin}
         project={creation.project ? { id: creation.project.id, name: creation.project.name } : null}
         creationTitle={creation.title}
       />
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">
-            {creation.title}
-          </h1>
-
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span>{creation.contentType}</span>
-
-            <span>•</span>
-
-            <span>
-              {formatDate(creation.createdAt)}
+      {/* A. Header — format, project, status, last updated, primary utilities. */}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <FormatBadge contentType={creation.contentType} />
+          {creation.project && (
+            <span className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
+              {creation.project.name}
             </span>
-
-            {creation.project?.brandKit && (
-              <>
-                <span>•</span>
-                <BrandKitBadge name={creation.project.brandKit.name} />
-              </>
-            )}
-          </div>
+          )}
+          {creation.project?.brandKit && <BrandKitBadge name={creation.project.brandKit.name} />}
+          <span className="text-xs text-muted-foreground">Updated {formatRelativeTime(creation.updatedAt)}</span>
         </div>
 
-        <CreationActions
-          creation={{
-            id: creation.id,
-            title: creation.title,
-            caption: creation.caption,
-            prompt: creation.prompt,
-            hashtags,
-            carousel,
-            story,
-            reel,
-          }}
-          carouselPlanId={creation.carouselPlanId}
-          postPlanId={creation.postPlanId}
-          storyPlanId={creation.storyPlanId}
-        />
-      </div>
-
-      {/* Review page: Generated Content → Generated Images → Hashtags → Publishing Preview */}
-      <div className="space-y-8">
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold">Generated Content</h2>
-          <GeneratedContentSections
-            caption={creation.caption}
-            hashtags={hashtags}
-            carousel={carousel}
-            story={story}
-            reel={reel}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <TruncatedTitle title={creation.title} />
+          <CreationActions
+            creation={{
+              id: creation.id,
+              title: creation.title,
+              caption: creation.caption,
+              prompt: creation.prompt,
+              hashtags,
+              carousel,
+              story,
+              reel,
+            }}
             carouselPlanId={creation.carouselPlanId}
+            postPlanId={creation.postPlanId}
             storyPlanId={creation.storyPlanId}
-            reelPlanId={creation.reelPlanId}
-            carouselPlanSlides={carouselPlanSlides}
-            storyPlanFrames={storyPlanFrames}
-            reelPlanContent={reelPlanContent}
-            postPlanContent={postPlanContent}
-            tabs={generatedContentTabs}
-            mediaRefreshKey={creation.updatedAt.toISOString()}
           />
-        </section>
+        </div>
 
-        {/* For a Phase 1/1C creation made through the Carousel or Post Planner (carouselPlanId/postPlanId set), the rendered media shown in the "Carousel" tab or "Publishing Preview" section below is this creation's media — a second, separately-populated image gallery here would just be an empty, confusing duplicate (see AGENTS.md's Template Renderer). */}
-        {!creation.carouselPlanId && !creation.postPlanId && !creation.storyPlanId && !creation.reelPlanId && (
-          <section className="space-y-4 rounded-2xl border p-5 md:p-6">
-            <h2 className="text-lg font-semibold">Generated Images</h2>
-            <GeneratedImagesGallery visualPromptId={creation.visualPromptId} />
-          </section>
-        )}
-
-        {hashtags.length > 0 && (
-          <section className="space-y-4 rounded-2xl border p-5 md:p-6">
-            <h2 className="text-lg font-semibold">Hashtags</h2>
-            <HashtagsCard hashtags={hashtags} />
-          </section>
-        )}
-
-        <section className="space-y-4 rounded-2xl border p-5 md:p-6">
-          <h2 className="text-lg font-semibold">Publishing Preview</h2>
-          {creation.postPlanId && (
-            <PostMediaPreview key={creation.updatedAt.toISOString()} postPlanId={creation.postPlanId} />
-          )}
-          {/* Content/media separation — the post's own headline/body/CTA
-              (PostPlan.data), shown independently of whether the image
-              above succeeded. Not part of GeneratedContentSections here:
-              the Review page's trimmed `tabs` prop omits "Post" entirely
-              (it already has this dedicated section), so this is the one
-              place a POST creation's structured content is visible. */}
-          {postPlanContent && <PostContentCard content={postPlanContent} />}
-          <PostCard caption={creation.caption} hashtags={hashtags} />
-        </section>
-
-        <DeveloperDetails
-          prompt={creation.prompt}
-          research={research?.success ? research.data : null}
-          planner={planner?.success ? planner.data : null}
-          qualityScore={qualityScore?.success ? qualityScore.data : null}
-          suggestions={suggestions?.success ? suggestions.data : null}
-          visualPromptId={creation.visualPromptId}
-          visualPrompt={visualPrompt?.success ? visualPrompt.data : null}
-        />
+        <WorkflowStatus status={creation.status} canvaSyncStatus={creation.canvaSyncStatus} />
       </div>
 
+      {/* B. Main creation workspace — one format-specific layout, never all four. */}
+      <section>
+        {creation.contentType === "POST" && (
+          <PostWorkspace
+            key={mediaRefreshKey}
+            postPlanId={creation.postPlanId}
+            content={postPlanContent}
+            visualPromptId={creation.visualPromptId}
+          />
+        )}
+        {creation.contentType === "CAROUSEL" && (
+          <CarouselWorkspace
+            key={mediaRefreshKey}
+            carouselPlanId={creation.carouselPlanId}
+            slides={carouselTextSlides}
+            visualPromptId={creation.visualPromptId}
+          />
+        )}
+        {creation.contentType === "STORY" && (
+          <StoryWorkspace
+            key={mediaRefreshKey}
+            storyPlanId={creation.storyPlanId}
+            frames={storyTextFrames}
+            visualPromptId={creation.visualPromptId}
+          />
+        )}
+        {creation.contentType === "REEL" && (
+          <ReelWorkspace
+            key={mediaRefreshKey}
+            reelPlanId={creation.reelPlanId}
+            reel={reelContent}
+            visualPromptId={creation.visualPromptId}
+          />
+        )}
+      </section>
+
+      {/* C. Content details — caption + hashtags, the same for every format,
+          deliberately separate from the format-specific slide/frame/scene
+          content above (Core Requirement #3). */}
+      <CaptionHashtagsPanel caption={creation.caption} hashtags={hashtags} />
+
+      <DeveloperDetails
+        prompt={creation.prompt}
+        research={research?.success ? research.data : null}
+        planner={planner?.success ? planner.data : null}
+        qualityScore={qualityScore?.success ? qualityScore.data : null}
+        suggestions={suggestions?.success ? suggestions.data : null}
+        visualPromptId={creation.visualPromptId}
+        visualPrompt={visualPrompt?.success ? visualPrompt.data : null}
+      />
+
+      {/* D. Actions — sticky, primary-action hierarchy handled inside. */}
       <ReviewActionBar
         creationId={creation.id}
         status={creation.status}

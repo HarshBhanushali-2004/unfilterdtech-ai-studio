@@ -28,6 +28,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvaStatusPill } from "@/components/creations/canva-status-pill";
 import { formatDateTime } from "@/lib/format-date";
 
@@ -385,7 +387,7 @@ export function ReviewActionBar({
 
   return (
     <>
-      <div className="sticky bottom-0 z-10 -mx-4 mt-10 border-t bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-10 border-t bg-background/95 px-4 py-4 shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.15)] backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span>Status:</span>
@@ -401,15 +403,28 @@ export function ReviewActionBar({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteOpen(true)}
-              disabled={busy}
-              className="text-destructive hover:text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
+            {/* Delete is deliberately the quietest control here — a single
+                icon rather than a labeled button — so it never competes
+                visually with the actions a reviewer actually uses while
+                preparing a creation (Core Requirement #2: "avoid making
+                every button visually equal"). Logic unchanged. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={busy}
+                  aria-label="Delete this creation"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
+
+            <Separator orientation="vertical" className="mx-1 h-6" />
 
             <Button variant="outline" onClick={handleRegenerateClick} disabled={busy}>
               <RefreshCcw className={`mr-2 h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
