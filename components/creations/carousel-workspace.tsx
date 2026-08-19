@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Copy } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Copy, RefreshCcw } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -22,6 +24,7 @@ function formatSlide(slide: CarouselSlide): string {
 }
 
 type CarouselWorkspaceProps = {
+  creationId: string;
   carouselPlanId: string | null;
   slides: CarouselSlide[] | null;
   visualPromptId: string | null;
@@ -42,10 +45,12 @@ type CarouselWorkspaceProps = {
  * plus the generic slot-based `GeneratedImagesGallery`, exactly as the
  * pre-redesign Review page did.
  */
-export function CarouselWorkspace({ carouselPlanId, slides, visualPromptId }: CarouselWorkspaceProps) {
+export function CarouselWorkspace({ creationId, carouselPlanId, slides, visualPromptId }: CarouselWorkspaceProps) {
+  const router = useRouter();
   const [media, setMedia] = React.useState<CarouselSlideMediaDTO[] | null>(null);
   const [total, setTotal] = React.useState<number>(slides?.length ?? 0);
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const [regeneratingSlide, setRegeneratingSlide] = React.useState(false);
 
   React.useEffect(() => {
     if (!carouselPlanId) return;
@@ -88,6 +93,38 @@ export function CarouselWorkspace({ carouselPlanId, slides, visualPromptId }: Ca
     if (!slides || slides.length === 0) return;
     copyToClipboard(slides.map(formatSlide).join("\n\n------------------------\n\n"), "Carousel copied");
   };
+
+  /**
+   * Regenerates exactly one slide's media — never the plan text, never any
+   * other slide (Core Requirement #16). `router.refresh()` re-pulls the
+   * Server Component's `creation.updatedAt`, which this component is keyed
+   * on at the page level, so a fresh `updatedAt` remounts this whole
+   * workspace and re-fetches every slide's current state — the same
+   * established "mutate → refresh → remount" pattern the whole-creation
+   * Regenerate/Canva actions already use, not a new one.
+   */
+  async function regenerateSlide(slideOrder: number) {
+    if (regeneratingSlide) return;
+    setRegeneratingSlide(true);
+
+    try {
+      const res = await fetch(`/api/creations/${creationId}/carousel/slides/${slideOrder}/regenerate`, {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
+      toast.success(`Slide ${slideOrder} regenerated`);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to regenerate this slide right now.");
+    } finally {
+      setRegeneratingSlide(false);
+    }
+  }
 
   if (!carouselPlanId) {
     // Legacy path — no per-slide media table to drive an interactive
@@ -137,9 +174,21 @@ export function CarouselWorkspace({ carouselPlanId, slides, visualPromptId }: Ca
 
       {activeSlide && (
         <div className="mx-auto max-w-2xl space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
-          <div>
-            <h3 className="mb-1 text-sm font-semibold text-muted-foreground">Headline</h3>
-            <p className="text-lg font-semibold">{activeSlide.headline}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-muted-foreground">Headline</h3>
+              <p className="text-lg font-semibold">{activeSlide.headline}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={regeneratingSlide}
+              onClick={() => regenerateSlide(activeIndex + 1)}
+            >
+              <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${regeneratingSlide ? "animate-spin" : ""}`} />
+              {regeneratingSlide ? "Regenerating…" : "Regenerate this slide"}
+            </Button>
           </div>
           <div>
             <h3 className="mb-1 text-sm font-semibold text-muted-foreground">Body</h3>

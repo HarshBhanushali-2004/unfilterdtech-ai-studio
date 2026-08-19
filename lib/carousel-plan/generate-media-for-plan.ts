@@ -161,6 +161,53 @@ async function resolveAndRenderSlide({
   }
 }
 
+export type GenerateMediaForCarouselSlideInput = {
+  carouselPlanId: string
+  plan: CarouselPlanObject
+  slideOrder: number
+  brandKit: BrandKit | null
+}
+
+/**
+ * Resolves and re-renders exactly one slide of an already-generated
+ * Carousel Plan — the Review page's per-slide "Regenerate this slide"
+ * action ("Do not regenerate every image when only one failed slide needs
+ * regeneration"). A thin wrapper around the same `resolveAndRenderSlide`
+ * the full-carousel path already uses (no duplicated resolution/rendering
+ * logic), always with `forceRegenerate: true` — regenerating one slide
+ * always means a fresh attempt for that slide specifically, never a cache
+ * hit on whatever it currently holds.
+ */
+export async function generateMediaForCarouselSlide({
+  carouselPlanId,
+  plan,
+  slideOrder,
+  brandKit,
+}: GenerateMediaForCarouselSlideInput): Promise<CarouselSlideMediaDTO> {
+  const slide = plan.slides.find((s) => s.order === slideOrder)
+  if (!slide) {
+    throw new Error(`Slide ${slideOrder} does not exist in this carousel plan.`)
+  }
+
+  ensureNodeFontsRegistered()
+
+  const template = getTemplate(brandKit?.templateFamilyId)
+  const brandProfile = brandKitToRenderProfile(brandKit)
+  const brandLabel = brandKit?.name ?? ""
+  const logoImage = await loadBrandLogo(brandProfile)
+
+  return resolveAndRenderSlide({
+    carouselPlanId,
+    plan,
+    slide,
+    template,
+    brandProfile,
+    brandLabel,
+    logoImage,
+    forceRegenerate: true,
+  })
+}
+
 export type GenerateMediaForCarouselPlanInput = {
   carouselPlanId: string
   plan: CarouselPlanObject

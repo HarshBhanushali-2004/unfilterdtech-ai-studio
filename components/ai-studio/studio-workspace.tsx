@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { GeneratedInstagramContent } from "@/lib/ai"
+import { parseJsonResponse } from "@/lib/http/parse-json-response"
 import { getTemplate } from "@/lib/template-renderer/registry"
 
 const apiContentTypeByContentType = {
@@ -159,8 +160,21 @@ export function StudioWorkspace() {
         }),
       })
 
-      const payload =
-        (await response.json()) as GenerateApiResponse
+      // Defensive by design, not just optimistic: `/api/generate` always
+      // returns Response.json(...) on both success and failure, but a
+      // serverless platform killing this request for exceeding its
+      // execution time limit (or any other infrastructure-level failure
+      // upstream of our own route handler) returns its own non-JSON error
+      // page instead — blindly calling `response.json()` on that throws a
+      // raw, meaningless "Unexpected token ... is not valid JSON" instead
+      // of a real error message. See lib/http/parse-json-response.ts.
+      const parsed = await parseJsonResponse<GenerateApiResponse>(response)
+
+      if (!parsed.ok) {
+        throw new Error(parsed.message)
+      }
+
+      const payload = parsed.data
 
       if (!response.ok || !payload.data) {
         throw new Error(

@@ -16,6 +16,29 @@ import { loadBrandContext } from "@/lib/brand-kit/load-context"
 import { formatZodError } from "@/lib/validation"
 
 export const runtime = "nodejs"
+// This route runs up to five sequential Gemini text calls (Research →
+// Planner → Visual Prompt → Instagram Content Generator, plus a Carousel/
+// Post/Story/Reel Planner call for whichever format was requested) — each
+// with its own resilience pipeline (lib/ai/gemini-provider.ts: up to 4
+// attempts per key with 500ms/1s/2s backoff, then key rotation, then model
+// fallback). Every other route in this app that runs a comparable or
+// lighter pipeline already declares maxDuration (see
+// app/api/creations/route.ts, .../regenerate/route.ts) — this route was
+// missing it. Without it, this route silently inherited the platform's
+// default Node.js function timeout (10s on Vercel Hobby), which a
+// Carousel request in particular — the longest pipeline, five stages, not
+// four — could exceed even under only mild Gemini degradation, well before
+// any of this file's own try/catch ever got a chance to run. When Vercel
+// kills a function for exceeding its time limit, it returns its own plain-
+// text platform error page instead of anything this route ever wrote —
+// which is what actually produced the reported "Unexpected token 'A', "An
+// error o"... is not valid JSON" client-side error (see
+// components/ai-studio/studio-workspace.tsx's parseJsonResponse usage and
+// ABOUT.md for the full trace). Matches the same `120` used by the other
+// long-pipeline routes; Vercel clamps this to whatever the deployed plan
+// actually allows (e.g. 60s on Hobby) — still a large improvement over the
+// previous unset 10s default.
+export const maxDuration = 120
 
 /**
  * Research Engine step — the first intelligence stage of every generation.

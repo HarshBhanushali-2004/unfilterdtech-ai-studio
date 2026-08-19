@@ -30,6 +30,16 @@ export function getRegisteredImageProviderNames(): ImageProviderName[] {
 /** Errors worth a single automatic retry — transient, not a property of the prompt itself. */
 const TRANSIENT_RETRY_CODES: ImageGenerationErrorCode[] = ["NETWORK_ERROR", "PROVIDER_UNAVAILABLE"]
 
+/**
+ * Fallback order across *registered* providers — tried after the active
+ * provider (whichever it is) has exhausted its own retry. Only "gemini" and
+ * "flux" are actually implemented (`PROVIDER_REGISTRY` above); the manager
+ * skips any name here with no registered implementation, so this list is
+ * safe to extend the moment a new provider is registered without anything
+ * else changing.
+ */
+const FALLBACK_PROVIDER_ORDER: ImageProviderName[] = ["gemini", "flux"]
+
 export function getActiveImageProviderName(): ImageProviderName {
   const configured = process.env.IMAGE_PROVIDER?.trim().toLowerCase()
 
@@ -59,28 +69,70 @@ function normalize(error: unknown): ImageGenerationError {
 }
 
 /**
- * The Image Provider Manager — the single entry point the rest of the
- * application uses to generate an image. Owns provider selection, a single
- * automatic retry for transient failures, and normalized error output. No
- * caller outside this file (and its provider implementations) should ever
- * know which provider actually produced the image.
+ * Attempts one provider end-to-end: the call, then — only for a transient
+ * failure (`TRANSIENT_RETRY_CODES`) — a single same-provider retry. Returns
+ * the normalized error rather than throwing, so the Manager can decide
+ * whether to fall through to another provider without a try/catch at every
+ * call site.
  */
-export async function generateImage(request: GenerateImageRequest): Promise<ImageProviderResult> {
-  const provider = getActiveImageProvider()
-
+async function attemptProvider(
+  provider: ImageProvider,
+  request: GenerateImageRequest
+): Promise<{ result: ImageProviderResult } | { error: ImageGenerationError }> {
   try {
-    return await provider.generateImage(request)
+    return { result: await provider.generateImage(request) }
   } catch (error) {
     const normalized = normalize(error)
-
     if (!TRANSIENT_RETRY_CODES.includes(normalized.code)) {
-      throw normalized
+      return { error: normalized }
     }
 
     try {
-      return await provider.generateImage(request)
+      return { result: await provider.generateImage(request) }
     } catch (retryError) {
-      throw normalize(retryError)
+      return { error: normalize(retryError) }
     }
   }
+}
+
+/**
+ * The Image Provider Manager — the single entry point the rest of the
+ * application uses to generate an image. Owns provider selection, a single
+ * automatic same-provider retry for transient failures, and — new here —
+ * falling through to the next *registered* provider when the configured
+ * active one fails outright (any error code, not just transient ones:
+ * `QUOTA_EXCEEDED` is exactly the case this exists for). Concretely today:
+ * Gemini (the default active provider) → FLUX (already registered and
+ * configured via `HF_TOKEN`, see `flux-provider.ts`) → a normalized
+ * failure the caller persists as that slide/frame/scene/post's own FAILED
+ * media status. No caller outside this file (and its provider
+ * implementations) should ever know which provider actually produced the
+ * image, or that a fallback happened at all — `ImageProviderResult.provider`
+ * already reports the real source either way.
+ */
+export async function generateImage(request: GenerateImageRequest): Promise<ImageProviderResult> {
+  const activeName = getActiveImageProviderName()
+  const order = [activeName, ...FALLBACK_PROVIDER_ORDER.filter((name) => name !== activeName)]
+
+  let lastError: ImageGenerationError | null = null
+
+  for (const name of order) {
+    const provider = PROVIDER_REGISTRY[name]
+    if (!provider) continue // Not implemented — nothing to fall through to.
+
+    const attempt = await attemptProvider(provider, request)
+    if ("result" in attempt) return attempt.result
+
+    console.warn(
+      `[ImageProviderManager] "${name}" failed (${attempt.error.code})${name === activeName ? "" : " on fallback"}${
+        name !== order[order.length - 1] ? " — trying the next configured provider" : ""
+      }`
+    )
+    lastError = attempt.error
+  }
+
+  throw (
+    lastError ??
+    new ImageGenerationError("PROVIDER_UNAVAILABLE", `The "${activeName}" image provider isn't implemented yet.`)
+  )
 }

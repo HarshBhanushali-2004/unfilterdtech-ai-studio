@@ -108,6 +108,11 @@ export function ReviewActionBar({
   const [currentCanvaEditUrl, setCurrentCanvaEditUrl] = useState(canvaEditUrl);
   const [currentCanvaLastSyncedAt, setCurrentCanvaLastSyncedAt] = useState(canvaLastSyncedAt);
   const [canvaBusy, setCanvaBusy] = useState(false);
+  // Drives the "Edit in Canva" button's own inline "Opening in Canva…"
+  // label while the create request is in flight — see `editInCanva`'s doc
+  // comment for why this replaced the old pre-opened-blank-tab approach.
+  const [openingCanva, setOpeningCanva] = useState(false);
+  const [syncingCanva, setSyncingCanva] = useState(false);
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
 
   const canvaEditableFormat = contentType === "POST" || contentType === "CAROUSEL";
@@ -206,61 +211,34 @@ export function ReviewActionBar({
   }
 
   /**
-   * Writes a small, intentional loading state into a freshly-opened
-   * `about:blank` tab. Without this, the tab sits on a stark blank/white
-   * page for however long `POST .../canva/create` takes — Canva's Design
-   * Import API is a genuinely async job the server polls to completion
-   * (`lib/canva/design-import.ts`: up to a ~60s ceiling, though a small
-   * design usually resolves in a few seconds), so that wait can't be
-   * skipped. This doesn't shorten the wait — it just replaces the blank
-   * flash with a clean, on-brand "Opening Canva…" state so it reads as
-   * intentional rather than broken.
+   * "Edit in Canva" — rewritten to eliminate the blank/white intermediate
+   * tab entirely, rather than papering over it. The previous version opened
+   * a placeholder tab *before* the async `POST .../canva/create` call (the
+   * standard trick to dodge popup blockers when a click handler needs to
+   * `await` before it knows a destination URL) and wrote a loading state
+   * into it — but the user still watched a separate blank/loading tab sit
+   * next to their Review page for however long Canva's Design Import job
+   * took. The fix: no tab is opened at all until the real `editUrl` is in
+   * hand. The user stays on the Creation page the whole time, watching this
+   * button's own "Opening in Canva…" state (`openingCanva`) — one clean
+   * navigation once the destination is known, exactly the "AI Version →
+   * Canva Editing" transition this button already represents.
+   *
+   * Popup-blocker note: calling `window.open` after an `await` is normally
+   * what popup blockers exist to stop — but browsers track "transient user
+   * activation" for a few seconds after a real click, not just the
+   * synchronous instant of the event, so a `fetch` that resolves quickly
+   * (Canva's import job usually does, per `lib/canva/design-import.ts`)
+   * still opens without a blocker prompt in Chrome/Edge/Firefox. If a
+   * browser blocks it anyway (Safari is stricter), `window.open` returns
+   * `null` rather than throwing — handled below by keeping the design
+   * that's already been created and offering a one-click "Open Canva"
+   * action on the toast, which is a *fresh* synchronous click and is never
+   * blocked. Nothing is left in a dead end either way.
    */
-  function writeCanvaLoadingState(tab: Window): void {
-    try {
-      tab.document.title = "Opening Canva…";
-      tab.document.head.insertAdjacentHTML(
-        "beforeend",
-        `<style>
-          :root { color-scheme: light dark; }
-          body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-                 font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-                 background:#fafafa; color:#18181b; }
-          @media (prefers-color-scheme: dark) { body { background:#0a0a0b; color:#f4f4f5; } }
-          .wrap { display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; padding:24px; }
-          .spinner { width:28px; height:28px; border-radius:9999px; border:3px solid rgba(124,58,237,0.25);
-                     border-top-color:#7c3aed; animation:spin 0.8s linear infinite; }
-          @keyframes spin { to { transform: rotate(360deg); } }
-          h1 { margin:0; font-size:15px; font-weight:600; }
-          p { margin:0; font-size:13px; opacity:0.65; max-width:280px; }
-        </style>`
-      );
-      tab.document.body.innerHTML = `
-        <div class="wrap">
-          <div class="spinner"></div>
-          <h1>Opening Canva&hellip;</h1>
-          <p>Preparing this creation for editing. This can take a few seconds.</p>
-        </div>`;
-    } catch {
-      // Cross-origin/inaccessible document in some browser configurations —
-      // fall back to the plain about:blank the browser already shows rather
-      // than failing the "Edit in Canva" action over a cosmetic loading state.
-    }
-  }
-
-  function openCanvaTab(): Window | null {
-    // Opened synchronously, inside the click handler, before any `await` —
-    // otherwise most browsers' popup blockers silently swallow a
-    // `window.open` call that happens after an async gap.
-    const tab = window.open("", "_blank", "noopener,noreferrer");
-    if (tab) writeCanvaLoadingState(tab);
-    return tab;
-  }
-
   async function editInCanva() {
     // Known client-side already (server-rendered prop) — skip the round
-    // trip and go straight to the existing OAuth flow rather than opening a
-    // tab we'd only have to close again.
+    // trip and go straight to the existing OAuth flow.
     if (!canvaConnected) {
       window.location.href = "/api/canva/connect";
       return;
@@ -269,21 +247,22 @@ export function ReviewActionBar({
     // Already linked to a design (CANVA_NEXT_PHASE_PLAN.md §9, scenario 7:
     // "the same design again") — reopen the existing edit_url rather than
     // calling Design Import a second time, which would create a *second*,
-    // disconnected Canva design for the same post.
+    // disconnected Canva design for the same post. The URL is already
+    // known, so this is a plain, always-safe synchronous `window.open` —
+    // no async gap, no blank tab, nothing to fix here.
     if (canvaLinked && currentCanvaEditUrl) {
       window.open(currentCanvaEditUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
-    const pendingTab = openCanvaTab();
     setCanvaBusy(true);
+    setOpeningCanva(true);
 
     try {
       const res = await fetch(`/api/creations/${creationId}/canva/create`, { method: "POST" });
       const data = await res.json();
 
       if (!res.ok) {
-        pendingTab?.close();
         if (data.needsConnect) {
           // The token expired between page load and this click (e.g. a
           // failed silent refresh) — the connect route re-establishes it.
@@ -293,25 +272,40 @@ export function ReviewActionBar({
         throw new Error(data.error);
       }
 
-      if (pendingTab) {
-        pendingTab.location.href = data.editUrl;
-      } else {
-        window.open(data.editUrl, "_blank", "noopener,noreferrer");
-      }
-
       setCurrentCanvaStatus("EDITING");
       setCurrentCanvaEditUrl(data.editUrl);
-      toast.success("Opened in Canva — edit there, then come back and click Sync back from Canva.");
       router.refresh();
+
+      const opened = window.open(data.editUrl, "_blank", "noopener,noreferrer");
+
+      if (opened) {
+        toast.success("Opened in Canva — edit there, then come back and click Sync back from Canva.");
+      } else {
+        // The design was created successfully — only the automatic tab-open
+        // was blocked. Never lose that work behind a dead end.
+        toast.error("Your browser blocked the Canva tab from opening automatically.", {
+          description: "The design was created — open it manually below.",
+          action: {
+            label: "Open Canva",
+            onClick: () => window.open(data.editUrl, "_blank", "noopener,noreferrer"),
+          },
+        });
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to open this creation in Canva right now.");
+      toast.error("Couldn't open Canva", {
+        description:
+          error instanceof Error ? error.message : "There was a problem creating the Canva design.",
+        action: { label: "Try again", onClick: () => void editInCanva() },
+      });
     } finally {
       setCanvaBusy(false);
+      setOpeningCanva(false);
     }
   }
 
   async function syncFromCanva() {
     setCanvaBusy(true);
+    setSyncingCanva(true);
 
     try {
       const res = await fetch(`/api/creations/${creationId}/canva/sync`, { method: "POST" });
@@ -333,6 +327,7 @@ export function ReviewActionBar({
       toast.error(error instanceof Error ? error.message : "Unable to sync back from Canva right now.");
     } finally {
       setCanvaBusy(false);
+      setSyncingCanva(false);
     }
   }
 
@@ -434,14 +429,18 @@ export function ReviewActionBar({
             {canvaEditableFormat && (
               <>
                 <Button variant="outline" onClick={editInCanva} disabled={busy}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {canvaConnected ? "Edit in Canva" : "Connect Canva"}
+                  {openingCanva ? (
+                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                  )}
+                  {openingCanva ? "Opening in Canva…" : canvaConnected ? "Edit in Canva" : "Connect Canva"}
                 </Button>
 
                 {canvaLinked && (
                   <Button variant="outline" onClick={syncFromCanva} disabled={busy}>
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Sync back from Canva
+                    <RefreshCcw className={`mr-2 h-4 w-4 ${syncingCanva ? "animate-spin" : ""}`} />
+                    {syncingCanva ? "Syncing…" : "Sync back from Canva"}
                   </Button>
                 )}
 

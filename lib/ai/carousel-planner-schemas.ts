@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { visualDirectionSchema } from "./visual-direction-schema"
+
 const nonEmptyText = z.string().trim().min(1)
 const looseText = z.string().trim()
 
@@ -62,6 +64,8 @@ export const carouselPlanObjectSchema = z
     title: nonEmptyText,
     category: nonEmptyText,
     objective: nonEmptyText,
+    /** The carousel's shared visual campaign direction (see `visual-direction-schema.ts`) — optional so a plan cached before this field existed still parses. */
+    visualDirection: visualDirectionSchema.optional(),
     slideCount: z.number().int().positive(),
     slides: z.array(carouselPlanSlideSchema).min(1),
   })

@@ -13,7 +13,6 @@ import { ReviewActionBar } from "@/components/creations/review-action-bar";
 import { StoryWorkspace } from "@/components/creations/story-workspace";
 import { TruncatedTitle } from "@/components/creations/truncated-title";
 import { WorkflowStatus } from "@/components/creations/workflow-status";
-import { BrandKitBadge } from "@/components/brand-kit/brand-kit-badge";
 import { formatRelativeTime } from "@/lib/format-date";
 import {
   researchObjectSchema,
@@ -184,15 +183,20 @@ export default async function CreationPage({
 
       {/* A. Header — format, project, status, last updated, primary utilities. */}
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Exactly one pill (the format) — everything else is plain, quiet
+            metadata text, not a second/third/fourth badge (Core Requirement:
+            "avoid excessive pills everywhere"). */}
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <FormatBadge contentType={creation.contentType} />
-          {creation.project && (
-            <span className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground">
-              {creation.project.name}
-            </span>
+          {creation.project && <span>{creation.project.name}</span>}
+          {creation.project?.brandKit && (
+            <>
+              <span aria-hidden className="text-muted-foreground/40">·</span>
+              <span>{creation.project.brandKit.name}</span>
+            </>
           )}
-          {creation.project?.brandKit && <BrandKitBadge name={creation.project.brandKit.name} />}
-          <span className="text-xs text-muted-foreground">Updated {formatRelativeTime(creation.updatedAt)}</span>
+          <span aria-hidden className="text-muted-foreground/40">·</span>
+          <span>Updated {formatRelativeTime(creation.updatedAt)}</span>
         </div>
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -230,6 +234,7 @@ export default async function CreationPage({
         {creation.contentType === "CAROUSEL" && (
           <CarouselWorkspace
             key={mediaRefreshKey}
+            creationId={creation.id}
             carouselPlanId={creation.carouselPlanId}
             slides={carouselTextSlides}
             visualPromptId={creation.visualPromptId}

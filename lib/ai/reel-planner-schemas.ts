@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { visualDirectionSchema } from "./visual-direction-schema"
+
 const nonEmptyText = z.string().trim().min(1)
 const looseText = z.string().trim()
 
@@ -52,6 +54,8 @@ export const reelPlanObjectSchema = z
     objective: nonEmptyText,
     hook: nonEmptyText,
     musicMood: nonEmptyText,
+    /** Shared visual campaign direction (see `visual-direction-schema.ts`) — optional for backward compatibility with plans cached before this field existed. */
+    visualDirection: visualDirectionSchema.optional(),
     sceneCount: z.number().int().positive(),
     scenes: z.array(reelSceneSchema).min(1),
   })

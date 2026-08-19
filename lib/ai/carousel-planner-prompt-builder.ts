@@ -1,3 +1,4 @@
+import { VISUAL_DIRECTION_JSON_SHAPE, imageGenerationPromptRule, visualDirectionRule } from "./image-prompt-guidelines"
 import type { PlannerObject } from "./planner-schemas"
 import type { ResearchObject } from "./research-schemas"
 
@@ -50,6 +51,7 @@ ${brandContext ? `${brandContext}\n\n` : ""}Return exactly one valid JSON object
   "title": "string",
   "category": "string (short label, e.g. Technology, News, Business, Educational, Product)",
   "objective": "string (what this carousel is trying to achieve)",
+  ${VISUAL_DIRECTION_JSON_SHAPE}
   "slideCount": 1,
   "slides": [
     {
@@ -57,7 +59,7 @@ ${brandContext ? `${brandContext}\n\n` : ""}Return exactly one valid JSON object
       "purpose": "string (this slide's editorial role, e.g. Hook, Context, Evidence, Explanation, Insight, CTA — or another structure you judge fits the topic better)",
       "mediaType": "IMAGE" | "VIDEO" | "NO_MEDIA",
       "mediaQuery": "string (a real-world search query describing the ideal source photo/video for this slide — required unless mediaType is NO_MEDIA, otherwise empty string)",
-      "imageGenerationPrompt": "string (a complete, standalone AI image generation prompt — subject, composition, lighting, mood, style — required whenever mediaType is IMAGE or VIDEO, otherwise empty string; used as the fallback when no real source video/image is available)",
+      "imageGenerationPrompt": "string (see the structured-prompt rule below — required whenever mediaType is IMAGE or VIDEO, otherwise empty string; used as the fallback when no real source video/image is available)",
       "headline": "string (short, punchy — this slide's on-screen headline)",
       "body": "string (supporting on-screen copy — may be empty for a purely visual slide)",
       "cta": "string (only non-empty on a slide that should show a call to action, typically the last slide)",
@@ -72,6 +74,8 @@ Rules:
 - Every slide must be strategically necessary — never pad with filler slides just to hit a target length.
 - Decide "mediaType" per slide independently. Use VIDEO for a moment that's inherently dynamic/demonstrative (a process, a motion, an action) and would genuinely benefit from real footage. Use IMAGE for a slide that needs a strong static visual (a concept, a product, a scene, a portrait, an illustrative moment). Use NO_MEDIA only for a slide that works purely as bold typography (e.g. a short punchy stat, a quote, a transition, a pure-text CTA) — do not overuse NO_MEDIA; most carousels should be predominantly visual.
 - Even when mediaType is VIDEO, still write a strong "imageGenerationPrompt" and "mediaQuery" — Phase 1 may not always have real source footage available and needs a high-quality fallback.
+${visualDirectionRule("slide")}
+${imageGenerationPromptRule("4:5")}
 - The default editorial progression is Hook → Context → Evidence → Explanation → Insight → CTA, but adapt it freely to what the topic actually needs (a news story, a product, a how-it-works explainer, and a listicle all want different shapes) — use your judgment, not a fixed template.
 - The final slide should almost always carry the CTA and reflect the brand/CTA strategy above; earlier slides should have an empty "cta" string.
 - "headline" must be short and punchy (aim for under 10 words) — it's on-screen typography, not a caption.

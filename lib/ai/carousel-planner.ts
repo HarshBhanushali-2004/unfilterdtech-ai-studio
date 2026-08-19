@@ -28,7 +28,20 @@ export async function generateCarouselPlan(
       prompt,
       generationConfig: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+        // Matches lib/ai/visual-prompt.ts's own `maxOutputTokens` — a
+        // carousel can run up to ~10 slides, and each slide's
+        // "imageGenerationPrompt" is now a full structured prompt (Subject/
+        // Visual concept/Environment/Composition/Camera/Lighting/Mood/Color/
+        // Brand direction — see lib/ai/image-prompt-guidelines.ts), not the
+        // short one-liner this field used to be. 8192 was fine before that
+        // change; a large, verbose carousel can now plausibly approach or
+        // exceed it, truncating the JSON mid-object. A truncated response
+        // already fails safely (JSON.parse throws → wrapped as a proper
+        // AIServiceError below, never a raw client-side parse error — see
+        // ABOUT.md's Studio generation reliability section), but it still
+        // means a real, avoidable generation failure for exactly the
+        // longest, most content-heavy format.
+        maxOutputTokens: 16384,
       },
     })
   } catch (error) {

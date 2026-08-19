@@ -22,7 +22,10 @@ export async function generateStoryPlan(
   try {
     text = await generateWithGemini({
       prompt,
-      generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+      // Matches lib/ai/carousel-planner.ts's own reasoning: each frame's
+      // "imageGenerationPrompt" is now a full structured prompt, not a
+      // one-liner — raised to avoid truncating a longer story's JSON.
+      generationConfig: { responseMimeType: "application/json", maxOutputTokens: 16384 },
     })
   } catch (error) {
     throw toFriendlyAIServiceError(

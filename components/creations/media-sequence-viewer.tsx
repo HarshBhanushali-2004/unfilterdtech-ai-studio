@@ -117,7 +117,29 @@ export function MediaSequenceViewer({
 
   return (
     <div className={cn("mx-auto w-full space-y-3", maxWidthClassName)}>
-      <div className={cn("relative overflow-hidden rounded-2xl border bg-muted shadow-sm", aspectClassName)}>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-2xl border bg-muted shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          aspectClassName
+        )}
+        tabIndex={hasMultiple ? 0 : undefined}
+        role={hasMultiple ? "group" : undefined}
+        aria-roledescription={hasMultiple ? "carousel" : undefined}
+        aria-label={hasMultiple ? `${noun} ${clampedIndex + 1} of ${sequence.length}` : undefined}
+        onKeyDown={
+          hasMultiple
+            ? (event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  goTo(clampedIndex - 1);
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  goTo(clampedIndex + 1);
+                }
+              }
+            : undefined
+        }
+      >
         <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5">
           <Badge variant="outline" className="border-transparent bg-background/80 font-medium backdrop-blur-sm">
             {noun} {clampedIndex + 1} / {sequence.length}

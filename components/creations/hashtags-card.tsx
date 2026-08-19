@@ -27,12 +27,12 @@ export function HashtagsCard({
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      {/* Reads as a creator's own hashtag list, not a wall of admin-panel
+          badges — individually visible and wrappable, but plain text with a
+          brand-colored tint rather than a bordered/filled pill per tag. */}
+      <div className="flex flex-wrap gap-x-3 gap-y-2 text-sm">
         {hashtags.map((tag) => (
-          <span
-            key={tag}
-            className="rounded-full border bg-muted px-4 py-2 text-sm font-medium"
-          >
+          <span key={tag} className="font-medium text-violet-600 dark:text-violet-300">
             #{tag.replace(/^#/, "")}
           </span>
         ))}

@@ -1,3 +1,4 @@
+import { VISUAL_DIRECTION_JSON_SHAPE, imageGenerationPromptRule, visualDirectionRule } from "./image-prompt-guidelines"
 import type { PlannerObject } from "./planner-schemas"
 import type { ResearchObject } from "./research-schemas"
 
@@ -44,6 +45,7 @@ ${brandContext ? `${brandContext}\n\n` : ""}Return exactly one valid JSON object
   "objective": "string (what this reel is trying to achieve)",
   "hook": "string (the opening line/moment that stops the scroll in the first 1-2 seconds)",
   "musicMood": "string (a creative direction for the soundtrack, e.g. cinematic, energetic, futuristic, emotional, calm, suspense, technology, news, motivational — never name a specific song or claim it is trending)",
+  ${VISUAL_DIRECTION_JSON_SHAPE}
   "sceneCount": 1,
   "scenes": [
     {
@@ -51,7 +53,7 @@ ${brandContext ? `${brandContext}\n\n` : ""}Return exactly one valid JSON object
       "purpose": "string (this scene's narrative role, e.g. Hook, Explanation, Detail, CTA — or another structure you judge fits the topic better)",
       "mediaType": "IMAGE" | "VIDEO",
       "mediaQuery": "string (a real-world search query describing the ideal source footage/photo for this scene)",
-      "imageGenerationPrompt": "string (a complete, standalone AI image generation prompt — subject, composition, lighting, mood, style — used for this scene's storyboard preview)",
+      "imageGenerationPrompt": "string (see the structured-prompt rule below — used for this scene's storyboard preview)",
       "durationSeconds": 1,
       "narration": "string (voiceover/dialogue for this scene — empty string for a silent/text-only scene)",
       "onScreenText": "string (short on-screen caption for this scene, a few words)",
@@ -65,6 +67,8 @@ Rules:
 - "order" values must be exactly 1, 2, 3, ... with no gaps; sceneCount must equal the length of the scenes array.
 - Every scene needs a real visual purpose — this becomes a storyboard preview image (via imageGenerationPrompt), never leave it generic or empty.
 - "onScreenText" must be very short — a few words a viewer can read in under a second.
+${visualDirectionRule("scene")}
+${imageGenerationPromptRule("9:16")}
 - The final scene should almost always carry the CTA and reflect the brand/CTA strategy above.
 - Ground every scene in the strategic brief (audience, tone, angle, keywords) and, when brand guidance is provided, reflect the brand's voice and colors.`
 }

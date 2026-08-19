@@ -1,367 +1,257 @@
-# Creation Page Redesign
+# Generation Reliability Fix — "Unexpected token 'A', "An error o"... is not valid JSON"
 
-## ⚠️ Unexpected git activity discovered during this session
+## Follow-up verification pass (second session on this bug)
 
-Before the redesign summary: while wrapping up, I found that two commits —
-`51d2e00` and `bcf1bde`, both titled "Fix creation format flow and Canva
-integration" — now exist on `main` **and have been pushed to the real GitHub
-remote** (`https://github.com/HarshBhanushali-2004/unfilterdtech-ai-studio.git`,
-confirmed with a read-only `git fetch origin main`, not assumed from a stale
-local ref). The first commit captured this session's earlier Canva/tabs
-debugging work (including a copy of `ABOUT.md`); the second, made ~18 seconds
-later, deletes `ABOUT.md` again.
+A second pass re-verified this entire fix against the **current** code rather than trusting the write-up below on faith, per explicit instruction. Findings:
 
-**I did not run `git add`, `git commit`, or `git push` at any point in this
-conversation** — every shell command I ran is visible in this session's tool
-history, and none of them were git-write commands. Both task prompts I was
-given explicitly said not to commit or push. I have not attempted to revert,
-reset, or force-push anything — undoing a push is a judgment call for you to
-make, not something I should decide unilaterally. Please check whether this
-repo has an auto-commit hook, a CI job, or another active session/terminal
-that could have done this, and let me know how you'd like to handle the
-now-public commit history if it matters. I'm flagging this prominently rather
-than silently proceeding as if nothing happened.
+- **The previous fix is genuinely present and correct** — re-read (not re-recalled) `app/api/generate/route.ts` (has `maxDuration = 120`), `lib/http/parse-json-response.ts` (exists, correct), and `components/ai-studio/studio-workspace.tsx` (actually calls `parseJsonResponse`, no bare `response.json()` remains outside a comment). Confirmed via fresh `grep`/`Read`, not memory.
+- **One real, related issue found and fixed this pass**: `lib/ai/carousel-planner.ts`, `story-planner.ts`, and `reel-planner.ts` all called Gemini with `maxOutputTokens: 8192` — a value that predates the prior session's own prompt-engineering change (`lib/ai/image-prompt-guidelines.ts`), which made every slide/frame/scene's `imageGenerationPrompt` a full structured paragraph instead of a one-liner. A large, verbose carousel (up to ~10 slides, each now with a much longer prompt) can plausibly approach or exceed 8192 tokens, truncating Gemini's JSON output mid-object. This already failed *safely* (the existing `JSON.parse` → `AIServiceError(502)` wrapping catches it, so it was never going to reproduce the "Unexpected token" bug specifically), but it's a real, avoidable generation-failure mode for exactly the longest pipeline — the same one in the reported repro. Fixed by raising all three to `16384`, matching the value `lib/ai/visual-prompt.ts` already uses for the identical reason (its own doc comment: *"many 250-600 word prompts... raises maxOutputTokens well above the other calls to avoid truncation"*) — reusing an existing, already-proven-necessary value rather than guessing a new one.
+- **Precision correction on the `maxDuration` claim**: per Next.js's own bundled docs (`node_modules/next/dist/docs/.../maxDuration.md`): *"Deployment platforms can use `maxDuration` from the Next.js build output to add specific execution limits"* — it is a **request to the platform**, not a guarantee. This repo has no `.vercel` project link or plan-tier config checked in, so which Vercel plan is actually deployed cannot be determined from the codebase alone. `maxDuration = 120` will be honored up to whatever that plan allows (Vercel's well-known behavior is to clamp a higher requested value down — e.g. to 60s on Hobby) — but in every case, this is strictly better than the previous *unset* default (10s), regardless of which plan is deployed. Stated precisely rather than assumed.
+- **Fresh live re-verification, zero quota spent**: ran the dev server again, entered the exact reported repro (same topic, Carousel, creativity 100%), and this time intercepted `/api/generate` with a *different* simulated failure shape than the first pass (an HTML 502 "Bad Gateway" page, `Content-Type: text/html`, vs. the first pass's plain-text 504) — confirmed the UI shows **"Generation unavailable" / "The server is temporarily unavailable. Please try again." / \[Try again\]**, never a raw parser error. Broadens confidence beyond the single failure shape tested previously.
+- **Regression check, this pass**: `git status`/`git diff` scope confirms `components/creations/review-action-bar.tsx` (Canva), `lib/ai/image-providers/manager.ts` (Gemini→FLUX fallback), `lib/ai/image-prompt-guidelines.ts`/`visual-direction-schema.ts` (visualDirection/structured prompts), and the per-slide Carousel regenerate route were **not modified this pass** — only the three planner files' `maxOutputTokens` changed. Also directly re-confirmed (not assumed) that `lib/media-resolver/service.ts` still passes `slide.imageGenerationPrompt` straight through unmodified to `generateImage()`, and that `lib/ai/image-providers/manager.ts` still has its `FALLBACK_PROVIDER_ORDER = ["gemini", "flux"]` fallback loop intact.
+- **Tests re-run this pass, all clean**: `npx tsc --noEmit`, `npx eslint . --ignore-pattern '.claude/**'`, `npm run build`, `npm run verify:json-response-handling` (7/7), `npm run verify:image-prompts` — all pass. No Gemini/image-generation quota consumed (only the client-side `window.fetch` mock and a local zero-network script were used).
 
-Everything below is the actual redesign work, still sitting as **uncommitted
-changes in the working tree** (verified via `git status` immediately before
-writing this report).
+**Files touched this pass**: `lib/ai/carousel-planner.ts`, `lib/ai/story-planner.ts`, `lib/ai/reel-planner.ts` (the `maxOutputTokens` fix), and this file. Nothing else.
 
 ---
 
-## 1. What Was Changed
+This section documents a targeted debugging pass fixing a real Studio generation bug, on top of everything below (unchanged — this pass did not touch Canva, image-prompt engineering, the Gemini→FLUX fallback, or per-slide Carousel regeneration; see the Regression Check at the end of this section).
 
-The Creation/Review page (`/creations/[id]`) was redesigned from a stacked,
-tab-driven "database record" layout into a **format-first workspace**. The
-previous page showed the same four sections for every creation regardless of
-type (Generated Content tabs, a conditional legacy image grid, a Hashtags
-card, and a "Publishing Preview" card) — a Carousel and a Post looked like
-variations of the same generic template. The new page instead renders one of
-four purpose-built layouts, chosen by `creation.contentType`, each shaped
-around what that format actually is:
+## 1. Root Cause
 
-- **Post** → a hero visual next to its headline/body/CTA, two columns on
-  desktop, stacked on mobile.
-- **Carousel** → a large active-slide viewer with prev/next controls, a
-  "Slide N / total" counter, a thumbnail strip, and that one slide's own
-  text directly underneath — not a scroll-through stack of every slide's
-  card at once.
-- **Story** → the same interaction model as Carousel, but in a narrow 9:16
-  "phone" frame instead of a wide 4:5 one, so it reads as a different format
-  at a glance, not a reskinned Carousel.
-- **Reel** → the same 9:16 viewer over the scene storyboard, with the hook
-  pulled out above it and the active scene's narration/visual + full script
-  below — framed as "closest thing to a video preview this pipeline
-  produces," never implying a real video exists.
+The client (`components/ai-studio/studio-workspace.tsx`'s `generate()`) called `await response.json()` **unconditionally** on the `fetch("/api/generate")` response, including on non-2xx responses. `/api/generate`'s own Route Handler was never the problem — every `return` in it is `Response.json(...)`, on both success and failure (verified by grepping every `return` in the file). The actual failure happens **upstream of that handler ever running at all**: `app/api/generate/route.ts` was the one route in this codebase's Gemini-heavy pipeline that never declared `export const maxDuration`, unlike every sibling route running a comparable-or-lighter pipeline (`app/api/creations/route.ts` and `.../regenerate/route.ts` both explicitly set `maxDuration = 120`, each with its own comment explaining exactly this risk). Without it, `/api/generate` silently inherited the platform's default Node.js serverless function timeout (10s on Vercel Hobby). A **Carousel** request runs *five* sequential Gemini text calls (Research → Planner → Visual Prompt → Instagram Content Generator, **plus** the Carousel Planner — one more stage than Post/Story/Reel), each with its own retry/backoff (500ms/1s/2s) and possible key-rotation/model-fallback (`lib/ai/gemini-provider.ts`) — genuinely capable of exceeding a 10-second ceiling even under only mild Gemini degradation, and creativity 100 plausibly produces larger, slower generations on top of that. When Vercel kills a function for exceeding its time limit, it returns **its own plain-text platform error page** — not anything this app ever wrote — which is exactly what produced a response body starting with "An error o..." that `response.json()` then threw a raw `SyntaxError` trying to parse.
 
-A shared header now leads with a format badge, project, Brand Kit, and "last
-updated," a large (but clamped) title, and a small five-step workflow
-indicator (Draft → Editing → Ready → Scheduled → Published) driven entirely
-by the existing `CreationStatus`/`CanvaSyncStatus` columns — no new backend
-state. Caption + hashtags moved into one shared panel below the
-format-specific workspace, shown once per creation instead of being folded
-into a "Publishing Preview" card or duplicated across a caption tab and a
-post-preview card. Developer Details stays exactly where it was — a
-collapsed-by-default, visually muted section at the bottom — untouched.
+## 2. Original Failure
 
-The bottom action bar (Regenerate / Canva / Schedule / Approve & Publish /
-Delete) keeps its exact existing logic; only its visual weighting changed —
-see Section 2.
+A Vercel serverless-function execution-time-limit kill on `/api/generate`, most likely to occur for Carousel (the longest pipeline) at high creativity, before this route's own `try/catch` — which already correctly returns JSON for every *in-process* failure mode (Gemini unavailable, invalid key, quota, malformed JSON, Zod validation failure) — ever got a chance to run. This is an infrastructure-level failure, not a bug in the app's own error handling logic, which was already sound.
 
-## 2. UX Decisions
+## 3. Fix
 
-**Why one workspace per format instead of tabs.** The previous page's
-Generated Content tabs were driven by a fixed array, not by
-`creation.contentType` — a side effect I found and fixed in this same
-session's earlier Canva/tabs debugging pass (still uncommitted at the time
-this redesign started, and preserved here). The redesign goes further: there
-is no tab switcher at all in the main workspace now. A Creation has exactly
-one primary format; showing the reviewer a tab strip implies a choice that
-doesn't exist. The workspace `switch`es once, server-side, on
-`creation.contentType`.
+1. **`app/api/generate/route.ts`** — added `export const maxDuration = 120` (matching the exact value and reasoning already established in this codebase's other long-pipeline routes), directly reducing how often this route can be killed by the platform default.
+2. **`lib/http/parse-json-response.ts`** (new) — a small, reusable, defensive response reader: checks `Content-Type` before attempting `response.json()`, and if the body isn't (or doesn't parse as) JSON, returns a controlled `{ ok: false, message, status }` result with a status-aware friendly message (e.g. 504 → "The request timed out. Please try again.") instead of ever throwing a raw `SyntaxError`. Never claims to know a specific upstream cause it doesn't actually have evidence for.
+3. **`components/ai-studio/studio-workspace.tsx`** — `generate()` now calls `parseJsonResponse<GenerateApiResponse>(response)` and throws `parsed.message` when it fails, *before* the existing `!response.ok || !payload.data` check — which is otherwise completely unchanged.
 
-**Why a single active-item viewer instead of a stacked list for
-Carousel/Story/Reel.** The brief specifically called out that a reviewer
-shouldn't have to "scroll through a huge collection of disconnected cards to
-understand the carousel." The old page showed a horizontal media strip
-*and then, separately below it*, every slide's text card, one after another
-— two representations of the same 6–7 items that a reviewer had to
-mentally line up themselves. The new `MediaSequenceViewer` (shared by
-Carousel/Story/Reel) makes "which item am I looking at" a single piece of
-state: the large image, the counter, the thumbnail strip's highlighted tile,
-and the text card below it all move together when you click next/prev or a
-thumbnail.
+This is a defense-in-depth fix, not a guess-and-hope one: (1) makes the actual timeout far less likely, and (2) makes the one place a fetch response gets parsed defensive against *any* future infrastructure-level non-JSON response (a proxy error, a different platform timeout shape, etc.), matching Phase 4's explicit instruction not to rely on the root-cause fix alone.
 
-**Why Post, Story, and Reel don't all look the same.** Reusing one component
-for the interaction model (prev/next/counter/strip) is an engineering
-economy, not a design one — the aspect ratio (`aspect-[4/5]` for Carousel,
-`aspect-[9/16]` for Story/Reel), max width, and surrounding copy differ per
-format specifically so a Story still *reads* as a Story next to a Carousel,
-per the brief's "keep it visually different... the formats have different
-purposes."
+## 4. API Contract
 
-**Why Delete became icon-only.** The brief asked for a clear primary-action
-hierarchy and explicitly called out "avoid making every button visually
-equal." Delete was previously a full labeled outline button sitting first in
-the row, at the same visual weight as Regenerate. It's now a quiet icon
-button (with a tooltip) separated by a vertical divider — still one click
-away, never competing with the actions a reviewer actually uses while
-preparing a creation. Approve & Publish remains the one filled, colored
-(violet) button — the only true primary action in the bar.
+Unchanged and re-confirmed, not redesigned: every Route Handler in this app already returns `Response.json(...)`/`NextResponse.json(...)` on both success (`{ data, ... }`) and failure (`{ error: "..." }`), with a meaningful HTTP status. No route's success/error shape was changed. What changed is purely how the **client** now reads a response that — for reasons outside any route handler's control — isn't actually one of those.
 
-**Why a workflow stepper instead of just a status badge.** The brief asked
-for the lifecycle to be obvious. Rather than inventing new states, the
-stepper (`components/creations/workflow-status.tsx`) is a pure read of the
-existing `CreationStatus` enum plus a transient read of `CanvaSyncStatus`
-for the "Editing" step. It deliberately does **not** draw checkmarks on
-"passed" steps — nothing in this app ever sets `CreationStatus.APPROVED`
-today (Approve & Publish jumps straight from Draft to Published), and
-Schedule jumps straight from Draft to Scheduled, so claiming a creation
-"passed through" Ready before Published would be fabricating a history that
-didn't happen. Only the current step is highlighted; the rest are neutral
-labels.
+## 5. Frontend Handling
 
-## 3. Format-Specific Behavior
+- A response whose `Content-Type` isn't `application/json`, or whose body fails to parse despite claiming to be JSON, now resolves to a clean `{ ok: false, message }` — never a thrown `SyntaxError`, never shown to the user.
+- A response that *is* valid JSON (the normal case for every route in this app, success or failure) is read exactly as before — `parseJsonResponse` is a transparent passthrough for that case, verified by a dedicated test (Section 8).
+- The user now sees "Generation unavailable" / a real, status-aware sentence ("The request timed out. Please try again." for the timeout case) with a "Try again" button — never "Unexpected token 'A', "An error o"... is not valid JSON".
 
-| Format | Main workspace | Legacy fallback (no Plan) |
-|---|---|---|
-| **Post** (`post-workspace.tsx`) | Hero image (`aspect-[4/5]`, up to `max-w-md`) left, `PostContentCard` (headline/body/CTA) right on desktop, stacked on mobile. Media polls `/api/post-plans/[id]/media` exactly as `PostMediaPreview` did. | `GeneratedImagesGallery` (the pre-existing generic slot-based grid), unchanged. |
-| **Carousel** (`carousel-workspace.tsx`) | `MediaSequenceViewer` (`aspect-[4/5]`, `max-w-lg`) + the active slide's Headline/Body/Visual Suggestion card. Polls `/api/carousel-plans/[id]/slides`. "Copy Carousel" copies every slide's text (unchanged formatting from the old `CarouselCard`). | `GeneratedImagesGallery` + the original flat-text `CarouselCard`, unchanged. |
-| **Story** (`story-workspace.tsx`) | `MediaSequenceViewer` (`aspect-[9/16]`, `max-w-xs`) + active frame's Text/Visual Suggestion card. Polls `/api/story-plans/[id]/frames`. | `GeneratedImagesGallery` + `StoryCard`, unchanged. |
-| **Reel** (`reel-workspace.tsx`) | The honesty banner (verbatim from the old `ReelScenesGallery`: "static scene previews, not a final video") + Hook pulled out above the `MediaSequenceViewer` (`aspect-[9/16]`) + active scene's Narration/Visual + a collapsible full script. Polls `/api/reel-plans/[id]/scenes`. | Banner + `GeneratedImagesGallery` + `ReelCard`, unchanged. |
+## 6. Format Coverage
 
-Every format's tab/workspace choice is driven by exactly one field,
-`creation.contentType` — never inferred, never re-derived, never mutated by
-Regenerate (see Section 5).
+**Post, Carousel, Story, and Reel all share the exact same `/api/generate` Route Handler and the exact same client-side `generate()` function** — `contentTypes: [apiContentTypeByContentType[contentType]]` is the only per-format variation (confirmed by reading `studio-workspace.tsx` and `app/api/generate/route.ts` in full). There is no separate per-format generation endpoint or response parser to duplicate this fix across. Fixing this one shared route and one shared client function covers all four formats identically. Carousel remains the most exposed to the underlying timeout risk (five sequential stages vs. four for the others), which is exactly why it was the format in the reported repro.
 
-**Testing coverage note:** every Post/Carousel/Story/Reel creation with
-*real* per-item media (a `carouselPlanId`/`postPlanId`) currently in this
-database that I could find and check live is a **Post or Carousel** — every
-Story and Reel creation in the database predates the Phase 1C per-format
-Planner and has no `storyPlanId`/`reelPlanId`, so live browser testing only
-exercised the **legacy fallback path** for Story and Reel (confirmed
-correct — see Section 8), not the new interactive `MediaSequenceViewer` path
-for those two formats. That path shares 100% of its code with the
-live-verified Carousel path (same component, same failure-handling branch,
-different aspect ratio/copy only) — I did not fabricate a test result for
-it; see Section 9's honest limitation.
+## 7. Tests Run
 
-## 4. Canva Behavior
+- **`npx tsc --noEmit -p tsconfig.json`** — clean, zero errors.
+- **`npx eslint . --ignore-pattern '.claude/**'`** — clean, zero errors/warnings.
+- **`npm run build`** (`next build --webpack`) — compiled successfully; route table unchanged in shape (`/api/generate` still `ƒ`).
+- **`npm run verify:json-response-handling`** (new script, zero network calls, uses only the standard `Response`/`Headers` globals) — 7/7 checks pass, including a test that constructs the *literal* reported failure shape (`"An error occurred with your deployment\n\nFUNCTION_INVOCATION_TIMEOUT"`, `Content-Type: text/plain`, status 504) and asserts `parseJsonResponse` resolves without throwing and without ever producing an "Unexpected token" message; plus JSON success, JSON error, malformed-but-declared-JSON, and HTML-error-page cases; plus a direct `generatedInstagramContentSchema.safeParse` check against both malformed and well-formed model output.
+- **`npm run verify:image-prompts`** — still passes, unaffected (nothing this pass touched is in its dependency chain).
+- **Live browser reproduction, zero Gemini quota spent**: started the real dev server, opened `/studio`, entered the *exact* reported input (Topic: "Suzuki Invicto vs Toyota Inova Hycross", Content type: Carousel, Creativity: 100%), and **patched `window.fetch` in the page itself** (via the browser automation tool's JS execution, not a test framework) to intercept only the `/api/generate` call and return the literal simulated platform-timeout response — every other request (page loads, etc.) passed through untouched. Clicked the real "Generate carousel" button and confirmed the real, running React component rendered **"Generation unavailable" / "The request timed out. Please try again." / \[Try again\]** — not the reported JSON error. This exercises the actual shipped code path end-to-end (real component state, real `parseJsonResponse` call, real error UI) without a single real network/Gemini call. `fetch` was restored immediately after.
 
-**Nothing about Canva's logic was changed.** `ReviewActionBar`'s handler
-functions (`editInCanva`, `syncFromCanva`, `resetToAiVersion`,
-`handleRegenerateClick`'s Canva-loss confirmation) are byte-for-byte the same
-as before this redesign — only the JSX around Delete (Section 2) and the
-container's shadow styling changed. The Canva routes
-(`app/api/creations/[id]/canva/create/route.ts`,
-`.../canva/sync/route.ts`), the OAuth connect/callback routes, and every
-`lib/canva/*` file were **not touched in this session at all** (confirmed via
-`git status` — they don't appear in this session's diff).
+## 8. Image Generation
 
-Current, unchanged, verified-live behavior:
+**Zero image-generation (or any other Gemini) quota was consumed by this debugging pass.** The only "generation" attempted was the browser reproduction above, which never reached the network — `window.fetch` was intercepted client-side before the request left the page. No real Carousel, Post, Story, or Reel generation was run.
 
-- **POST and CAROUSEL**: "Edit in Canva" / "Sync back from Canva" / "Reset to
-  AI Version" appear in the action bar, gated on
-  `contentType === "POST" || "CAROUSEL"` — a single boolean read from the
-  server-provided `contentType` prop, structurally independent of any
-  workspace/tab UI state.
-- **STORY and REEL**: no Canva controls anywhere. Live-confirmed on a real
-  Story creation and a real Reel creation — no "Edit in Canva" button, no
-  Canva status pill, nothing.
-- The **AI Version → Canva Editing → Sync Back** workflow reads clearly in
-  the UI: the header's workflow stepper shows "Editing" the moment
-  `canvaSyncStatus` enters `IMPORTING`/`EDITING`/`EXPORTING`, and the action
-  bar's own `CanvaStatusPill` (unchanged) still shows the detailed live
-  status next to Approve & Publish.
-- **Live-verified this session**: opened a real, already-linked Carousel
-  creation (7 slides) and clicked "Edit in Canva" — it opened a real Canva
-  editor tab showing all 7 pages, confirming the create → reopen path still
-  works end-to-end. Did not create a **new** Canva design or run a fresh
-  Sync back this session (no code in that path changed, and doing so would
-  be an unnecessary additional external side effect against a live Canva
-  account for a path with zero code changes).
+## 9. Regression Check
 
-**No Story/Reel Canva integration was added or scaffolded** — this matches
-the task's explicit instruction. (A note for future work, not acted on: this
-session's earlier Canva/tabs debugging pass found that the template-renderer
-pipeline already produces per-frame/per-scene composited images for Story
-and Reel in the same shape Carousel's PPTX builder consumes, so this gap
-looks like a scope decision rather than an architectural blocker — but
-implementing it is out of scope here and wasn't attempted.)
+- **Canva blank-tab fix**: `components/creations/review-action-bar.tsx` was not touched this pass (confirmed via `git diff` scope) — `editInCanva()`'s no-pre-opened-tab flow, its popup-blocker fallback, and the already-linked-design reopen path are all exactly as they were.
+- **Image prompt improvements** (`visualDirection`, structured `imageGenerationPrompt`, text-safe negative space, no-text/watermark/logo instruction): none of `lib/ai/image-prompt-guidelines.ts`, `lib/ai/visual-direction-schema.ts`, or any of the four planner prompt builders were touched this pass. `npm run verify:image-prompts` re-run and still passes.
+- **Gemini → FLUX fallback** (`lib/ai/image-providers/manager.ts`): not touched this pass; `generateImage()`'s fallback-order loop is unchanged.
+- **Per-slide Carousel regeneration**: `lib/carousel-plan/generate-media-for-plan.ts`, the `.../carousel/slides/[order]/regenerate` route, and `CarouselWorkspace`'s "Regenerate this slide" button are all untouched this pass.
+- **Creation page redesign**: no Creation-page component was touched. This pass's only UI-facing change is inside the Studio's own `generate()` function.
 
-## 5. Regeneration Behavior
+## 10. Files Changed (this pass)
 
-Also unchanged: `app/api/creations/[id]/regenerate/route.ts` was not
-touched in this session. It reads `creation.contentType` once and branches
-into exactly one of `getOrCreateCarouselPlan`/`PostPlan`/`StoryPlan`/`ReelPlan`
-— `contentType` is never written anywhere in that file, so a Carousel cannot
-become a Post (or any other format) through Regenerate. The Regenerate
-button in the new action bar calls the exact same handler as before; its
-only change is the surrounding button styling (see Section 2). Live-checked
-this session: every format's Review page shows an enabled "Regenerate"
-button. Not live-clicked (would consume Gemini quota for a code path that
-wasn't touched, against the task's explicit "do not perform expensive AI
-generations" instruction).
+- `app/api/generate/route.ts` — added `maxDuration = 120` (+ explanatory comment).
+- `lib/http/parse-json-response.ts` — new, the defensive response-reading helper.
+- `components/ai-studio/studio-workspace.tsx` — `generate()` now uses `parseJsonResponse` instead of a bare `response.json()`.
+- `scripts/verify-json-response-handling.ts` — new, zero-network verification script.
+- `package.json` — added the `verify:json-response-handling` script.
 
-## 6. Media Failure Behavior
+## 11. Honest Limitations
 
-Every format-specific workspace treats "this item's text" and "this item's
-media" as two independent things, matching the brief's Core Requirement #9:
+- **The `maxDuration` fix reduces, but cannot mathematically guarantee elimination of, the underlying timeout** — a sufficiently degraded Gemini API (e.g. every key exhausted, forcing the full retry+rotation+model-fallback chain on every one of five sequential stages) could still, in principle, exceed even 120s, and Vercel itself clamps `maxDuration` to whatever the deployed plan actually allows (e.g. 60s on Hobby — still a 6x improvement over the previous unset 10s default). This is exactly why the frontend hardening (item 2) exists as a second, independent layer — it doesn't depend on the timeout never happening again.
+- **Not verified against a real Vercel deployment** — this was reproduced and fixed by tracing the code and by a faithful local/browser simulation of the exact failure shape, not by deploying and waiting for a real timeout in production (which isn't reliably reproducible on demand and would mean deliberately degrading a production system to trigger it).
+- **`response.text().catch(() => "")` inside `parseJsonResponse`'s `raw` field is diagnostic-only** — never surfaced to the user, not currently logged anywhere further than being available on the returned object; a future pass could pipe it to console.error if deeper client-side diagnostics are ever needed, but that wasn't part of the reported bug.
 
-- Text (headline/body/CTA/visual suggestion/narration/script) comes from the
-  Plan's own data (`carouselPlanToSlides`/`storyPlanToFrames`/`reelPlanToReel`
-  /the raw `PostPlan` fields — all pre-existing, unchanged adapters) and
-  renders unconditionally, regardless of that item's media status.
-- Media comes from a separate per-item `MediaResolutionStatus` (`PENDING` /
-  `RESOLVING` / `RENDERING` / `COMPLETED` / `FAILED`). A `FAILED` item shows
-  the existing `MediaFailedState` component (friendly "Media unavailable"
-  message + a "Show details" disclosure for the raw error, pointing at
-  Regenerate) **in place of the image only** — the slide/frame/scene itself
-  is never removed from the sequence, never renumbered, and its text stays
-  fully visible in the card below the viewer.
-- This was **live-verified** this session on a real Carousel with a mix of
-  completed and previously-failed (now-synced) slides: scrolling through the
-  media strip and reading each slide's Headline/Body/Visual Suggestion card
-  confirmed text is present regardless of media state, and the legacy
-  fallback path (`GeneratedImagesGallery`) was live-confirmed showing
-  "Generation failed" tiles alongside working ones without breaking the
-  page, on a real, older Carousel creation (`SONY CAMERA`, project "Try2").
-  I could not find a **currently-FAILED** slide on the new Phase-1C
-  interactive viewer specifically to screenshot (every Phase-1C carousel I
-  found in this database had already been fully synced from Canva in an
-  earlier session) — the failure-rendering branch is otherwise identical,
-  line for line, to the pre-existing `CarouselSlidesGallery`'s own
-  already-proven failure handling, just relocated into the new viewer shell.
+---
 
-## 7. Files Changed
+# UnfilteredTech AI Studio — Creation Experience, Image Generation & Canva Overhaul
 
-**Modified:**
-- `app/(dashboard)/creations/[id]/page.tsx` — full page restructure: new
-  header (format badge, project, Brand Kit, last-updated, workflow status),
-  format-`switch`ed workspace section, shared caption/hashtags panel;
-  removed the old tab-list wiring (`GeneratedContentSections`,
-  `PostMediaPreview`, `PostCard`, `HashtagsCard`, the standalone
-  "Generated Images"/"Publishing Preview" sections) from this page only.
-- `components/creations/review-action-bar.tsx` — Delete changed to an
-  icon-only button behind a tooltip with a vertical separator; sticky bar
-  given a subtle shadow. No handler/logic changes.
+This report documents a second, deeper pass on top of the format-first Creation page redesign from the previous session (still intact — see git history). This pass focused on three things the previous pass didn't touch: **image-generation quality** (the actual root cause of "Media unavailable" / generic-looking slides), **the Canva blank-tab bug** (root-caused precisely, not papered over), and **per-slide regeneration** — plus a UI polish pass to reduce pill/badge density per the new brief.
+
+> **Note on git state**: before touching any code, `git status` showed a **clean working tree** — the previous session's Creation-page redesign (workspace components, format badges, etc.) had already been committed and pushed to `origin/main` by an automated mechanism outside this session's own tool calls (already flagged to you at the end of the prior session; not re-litigated here, but stated for the record since Section 35 of this task's brief explicitly asks to check `git status` first). Nothing in this pass ran `git commit`, `git push`, `git reset`, or touched any commit history.
+
+---
+
+## 1. Overview
+
+Three real, verified root causes were found and fixed:
+
+1. **Weak image-generation prompts, with no shared art direction across a carousel's slides.** The Carousel/Story/Reel Planner prompts asked Gemini for "a complete, standalone AI image generation prompt — subject, composition, lighting, mood, style" as a single throwaway clause, with no shared visual identity instruction, no negative-constraints instruction, and no text-safe-area guidance. Fixed by adding a shared `visualDirection` concept and a fully structured per-item prompt rule (Section 3).
+2. **No provider fallback on image-generation failure.** `lib/ai/image-providers/manager.ts` only ever called the one configured provider (Gemini by default); a quota/availability failure went straight to `FAILED`. A second provider (FLUX, via the already-configured `HF_TOKEN`) was fully implemented but never actually used as a fallback. Fixed (Section 4).
+3. **The Canva "Edit in Canva" blank-tab bug** — root-caused precisely (Section 6): a placeholder tab was opened *before* the async Canva Design Import call resolved, so the user watched a separate blank/loading tab for however long that call took. Fixed by not opening any tab until the real destination URL is known, with a real, tested fallback for the case where the delay is long enough that the browser's popup blocker kicks in anyway (Section 6).
+
+Everything else in this pass (per-slide Carousel regeneration, keyboard navigation, pill/badge density) is additive polish layered on top of the same architecture, not a rewrite of it — see Section 9 for what was deliberately left untouched.
+
+---
+
+## 2. Creation Experience
+
+The previous session's format-first redesign (`PostWorkspace`/`CarouselWorkspace`/`StoryWorkspace`/`ReelWorkspace`, the `MediaSequenceViewer`, the workflow stepper) is unchanged in its core architecture. This pass added:
+
+- **Keyboard arrow navigation** on `MediaSequenceViewer` (used by Carousel/Story/Reel): the main viewer is now a focusable region (`tabIndex`, `role="group"`, `aria-roledescription="carousel"`, a visible focus ring) that responds to `ArrowLeft`/`ArrowRight` when focused — Tab to it or click a non-image part of it, then use the arrow keys. **Live-verified** (Section 8) by focusing the element and dispatching a real `ArrowRight` keydown, confirming the slide counter advanced from "Slide 1 / 7" to "Slide 2 / 7."
+- **Per-slide Carousel regeneration** ("Regenerate this slide" — Section 5) — new, not previously possible.
+- **Pill/badge density reduced** (Core Requirement #17/45 — "avoid excessive pills"): the header used to show up to four separate badge-styled pills (format, project, Brand Kit, updated-time). Now there is exactly **one** pill — the format badge — and everything else (project name, Brand Kit name, "Updated X ago") is plain muted text separated by "·", matching the brief's "clean format indicator... avoid excessive pills everywhere." Hashtags were similarly de-pilled: `HashtagsCard` (shared, so this improves the Studio's preview too) now renders each tag as plain violet-tinted text instead of a bordered/filled chip, reading closer to Instagram's own hashtag styling than an admin-panel tag list.
+- **Loading-state polish**: "Edit in Canva" shows "Opening in Canva…" inline on the button itself while the request is in flight (no separate loading screen); "Sync back from Canva" shows "Syncing…" the same way.
+
+## 3. Media Generation — Prompt Engineering
+
+**Root cause, confirmed by reading the actual prompt builders** (`lib/ai/carousel-planner-prompt-builder.ts` and its Post/Story/Reel siblings): every per-item `imageGenerationPrompt` is *written by Gemini itself*, as one field inside the same JSON object that produces the slide's headline/body/CTA — there is no separate, deterministic prompt-construction step downstream. The only instruction Gemini was given for that field was: *"a complete, standalone AI image generation prompt — subject, composition, lighting, mood, style."* That is the entire root cause of thin, inconsistent, unrelated-looking carousel images — there was never a shared campaign concept, never an instruction to leave room for the app's own rendered text, and never an instruction against generating fake on-image text/watermarks/logos.
+
+**Fix** — new shared module `lib/ai/image-prompt-guidelines.ts`, imported by all four planner prompt builders (Carousel/Post/Story/Reel):
+
+- `visualDirectionRule(itemNoun)` — a rule instructing the model to decide one shared **`visualDirection`** (style, realism, lighting, color, mood, composition, photography) for the whole sequence *before* writing any individual item's prompt, and to apply that same direction consistently across every slide/frame/scene while keeping each shot distinct — "consistency without repetition," directly implementing the brief's Section 10/13.
+- `imageGenerationPromptRule(aspectRatio)` — a rule specifying the exact structure every `imageGenerationPrompt` must follow: **Subject → Visual concept → Environment → Composition (incl. where the text-safe negative space sits, varied slide to slide) → Camera → Lighting → Mood → Color direction → Brand direction**, ending in a verbatim closing sentence: *"Aspect ratio {4:5 or 9:16}. Do not render any text, typography, captions, watermarks, logos, or UI elements in the image — the application renders all text separately."* This is the exact negative-constraints instruction Section 11 asked for, sent to the image provider unmodified (the Media Resolver passes `imageGenerationPrompt` straight through — see Section 4).
+- New `visualDirection: visualDirectionSchema.optional()` field added to `carouselPlanObjectSchema`, `storyPlanObjectSchema`, `reelPlanObjectSchema` (`.optional()` deliberately — see Section 7 on why this needed no migration and doesn't break any existing cached plan). Post has no `visualDirection` (it's a single image, not a sequence — no shared-campaign concept needed) but gets the same structured-prompt + negative-constraints rule.
+
+**Testing without spending quota** (Section 37's explicit instruction: don't repeatedly call paid/limited image APIs to test the UI): new `scripts/verify-image-prompts.ts` (registered as `npm run verify:image-prompts`) calls `buildCarouselPlannerPrompt` directly with a hand-built fake `ResearchObject`/`PlannerObject` and prints the resulting prompt string — **zero network calls, zero Gemini tokens spent**. Run and inspected by eye this session; confirmed the `visualDirection` JSON shape, the `visualDirectionRule`, and the `imageGenerationPromptRule` (with the correct "4:5" aspect ratio and the verbatim negative-constraints sentence) all render correctly into the final prompt text. This validates the *prompt engineering*, which is the actual deliverable here — it cannot and does not claim to validate final *image* quality, since that would require a real (paid, quota-consuming) Gemini image call, which this pass deliberately avoided per the brief.
+
+**What was investigated and found *not* to be a template-renderer bug**: the "generic purple slides" the brief describes as an example symptom were traced to their real cause — every composition variant in `lib/template-renderer/families/editorial-tech.ts` (`hero-full-bleed`, `text-first`, `framed-editorial`, `numbered-editorial`) **does** include a `mediaFrame` element; none of them hide the generated photo. The purple/solid-color slides observed live in this database trace back to (a) a slide's original AI image generation genuinely failing (quota exhaustion), then (b) that slide being exported to Canva as a tinted placeholder (an intentional, existing, documented design — see `lib/canva/pptx-builder.ts` — so a failed slide still gets an editable Canva page rather than a blank one), then (c) the user syncing back from Canva without having added a real photo in Canva itself, which correctly persists whatever was actually in Canva. This is a real generation-failure problem (fixed by the provider fallback, Section 4) plus a known, already-documented cosmetic limitation in the sync-back path (the media-type badge can still say "Video" for a slide that's now a synced static image — flagged in the previous session's report, not touched again here, out of scope for this pass).
+
+## 4. Media Generation — Provider Fallback
+
+**Root cause**: `lib/ai/image-providers/manager.ts`'s `generateImage()` called exactly one provider (`getActiveImageProviderName()`, defaulting to `"gemini"`), with a same-provider retry only for `NETWORK_ERROR`/`PROVIDER_UNAVAILABLE`. A `QUOTA_EXCEEDED` error (Gemini's own image-generation quota, which is genuinely limited and separate from its text-generation quota/key-rotation resilience — confirmed by reading `lib/ai/image-providers/gemini-image-provider.ts` and `CLAUDE.md`'s own note that image generation has no model-fallback chain) went straight to a `FAILED` slide, even though a second, fully-implemented, already-configured provider (`FluxImageProvider`, using `HF_TOKEN` — confirmed present in `.env.local`, not invented) sat unused in the same file's own `PROVIDER_REGISTRY`.
+
+**Fix**: `generateImage()` now tries the active provider (with its existing same-provider transient retry, unchanged), and on **any** failure — not just transient ones, since `QUOTA_EXCEEDED` is exactly the case this exists for — falls through to the next registered provider (`FALLBACK_PROVIDER_ORDER = ["gemini", "flux"]`, automatically skipping any name with no registered implementation, so this list is safe to extend later). Only if every registered provider fails does the normalized error propagate up to be persisted as that slide's `FAILED` status, exactly as before. No caller anywhere in the app needed to change — `resolveSlideMedia` (`lib/media-resolver/service.ts`) and every Post/Story/Reel media generator all call the same `generateImage()` entry point, so every format benefits uniformly. **No new API keys were introduced** — FLUX was already fully implemented and already configured via the existing `HF_TOKEN`; this pass only wired the Manager to actually use it as a fallback instead of leaving it dormant.
+
+**Not live-tested against a real quota failure** (doing so on purpose would mean deliberately exhausting real Gemini quota, which Section 15/37 explicitly warns against) — verified by full code reading of the new control flow (`attemptProvider`, the `order` loop, the `lastError` propagation) and by `tsc`/`eslint`/`build` passing. This is a real, honest limitation, stated plainly rather than claimed as tested.
+
+## 5. Regeneration
+
+**Whole-creation regeneration** (`app/api/creations/[id]/regenerate/route.ts`) is untouched this session — still reads `creation.contentType` once, never writes it, branches into exactly one of the four format Plan services, and is the only regeneration path for Post/Story/Reel, exactly as the brief's Section 16 asks ("For Story: Regenerate Story," "For Reel: Regenerate Reel" — no more, no less).
+
+**New this session — per-slide Carousel regeneration** ("Do not regenerate every image when only one failed slide needs regeneration"):
+
+- `lib/carousel-plan/generate-media-for-plan.ts` gained `generateMediaForCarouselSlide()` — a thin wrapper around the *same* `resolveAndRenderSlide()` the whole-carousel path already uses (no duplicated resolution/rendering logic), scoped to exactly one `slideOrder`, always `forceRegenerate: true`.
+- New route `POST /api/creations/[id]/carousel/slides/[order]/regenerate` — looks up the Creation, confirms it's a `CAROUSEL` with a real `carouselPlanId` and that the requested slide actually exists in the plan, calls the new function, then applies the same Canva-link-goes-stale data-safety guard the whole-carousel Regenerate/Canva routes already use (clears `canvaSyncStatus` back to `NOT_LINKED` since this slide's image just changed under an existing Canva design), and bumps `Creation.updatedAt` so the Review page's existing `mediaRefreshKey` remount mechanism picks up the change.
+- `CarouselWorkspace` gained a "Regenerate this slide" button next to the active slide's text card, calling the new route then `router.refresh()` — reusing the exact same "mutate → refresh → remount" pattern the whole-creation Regenerate action already established, not a new one.
+- **Never touches the plan's text** (headline/body/CTA/visualIntent) — only that slide's media. **Never regenerates any other slide.** **Never changes `Creation.contentType`.** Only exists for Carousel, where the underlying per-slide media architecture (`CarouselSlideMedia`, one row per slide) already supports it cleanly; Post/Story/Reel keep whole-creation-only regeneration, since inventing a per-item architecture for them wasn't asked for and isn't backed by an equivalent already-proven pattern in the time available for this pass.
+- **Live-verified**: rendered correctly in the browser next to a real slide's content (see Section 8). Not clicked live this session (would consume a real image-generation call against a working provider for a code path that's a thin, low-risk wrapper around already-proven logic) — verified by full code reading and `tsc`/`eslint`/`build`.
+
+## 6. Canva — The Blank-Tab Bug, Root-Caused and Fixed
+
+**Trace, as instructed, not guessed:**
+
+```
+"Edit in Canva" click (review-action-bar.tsx: editInCanva())
+  → (previously) window.open("", "_blank") — an empty placeholder tab, opened
+    synchronously to survive the popup blocker
+  → await fetch(POST /api/creations/[id]/canva/create)
+      → builds a .pptx server-side
+      → calls Canva's Design Import API — a genuinely ASYNCHRONOUS job
+        (lib/canva/design-import.ts polls every 2s, up to a 60s ceiling;
+        a real multi-slide Carousel import measured at 5.7s this session —
+        see Section 8's server log)
+  → response arrives → pendingTab.location.href = data.editUrl
+```
+
+**Root cause, precisely**: the placeholder tab sat on a literal, unstyled `about:blank` for the entire duration of that `fetch` — a few seconds in the common case, confirmed live at 5.7s for a real 7-slide carousel this session. This was not a misused `window.open`, not an extra app route, not anything OAuth-related — it was a real async third-party API call with nothing shown in the tab while it was in flight.
+
+**Fix — a genuinely different flow, not a bigger band-aid on the same one** (a previous session had already tried writing a loading state into that placeholder tab; this pass removes the placeholder tab entirely, per this task's explicit direction: *"If Canva creation is asynchronous, keep the user on the current Creation page while the request completes. Then navigate/open Canva once the final URL is available"*):
+
+1. No tab is opened at all when the user clicks "Edit in Canva" for a not-yet-linked creation. The user stays on the Creation page.
+2. The button itself shows an inline "Opening in Canva…" state (`openingCanva`, a new piece of state — spinner icon swap, label swap) for the duration of the request — this *is* the "loading state," not a second browser tab.
+3. Only once the real `editUrl` is known does the code call `window.open(data.editUrl, "_blank", "noopener,noreferrer")` — one clean navigation straight to the real destination, no intermediate page of any kind.
+4. **Popup-blocker handling, done honestly rather than assumed away**: calling `window.open` after an `await` is exactly what popup blockers exist to catch. Browsers track a few seconds of "transient user activation" after a real click, not just the synchronous instant of the event, so a fast-resolving request still opens without a blocker prompt in the common case — but a slow one (a multi-slide Carousel import, which this session measured at 5.7s) can outlast that window. `window.open` returns `null` rather than throwing when blocked, so the code checks for that: on success, a normal confirmation toast; **on a blocked popup, the design has already been created successfully server-side** — the toast changes to *"Your browser blocked the Canva tab from opening automatically. The design was created — open it manually below."* with a **working one-click "Open Canva" action** (a fresh synchronous click, which is never blocked). No dead end either way, matching Section 25's explicit "Do not leave the user with a blank tab. Do not silently fail" and Section 24's "Do not implement a workaround that creates another UX problem."
+5. The "already linked → reopen existing design" branch (clicking "Edit in Canva" a second time on a creation that already has one) is unchanged — it's a plain, synchronous `window.open(currentCanvaEditUrl, ...)` with an already-known URL, so it never had a blank-tab problem to begin with.
+6. Canva creation failure (the fetch itself throwing) now shows a toast titled **"Couldn't open Canva"** with a description ("There was a problem creating the Canva design.") and a **"Try again"** action that re-runs `editInCanva()` — matching Section 25/31's exact requested shape, not a generic "Something went wrong."
+
+**Nothing about Canva's OAuth, the create/sync/reset route handlers, or the token-refresh flow was touched.** Only `components/creations/review-action-bar.tsx`'s `editInCanva()` function and its surrounding button JSX changed.
+
+## 7. Brand Kit
+
+Investigated (`lib/template-renderer/brand-profile.ts`, `color-resolve.ts`): Brand Kit's colors/fonts/logo already flow into the template renderer exactly as before — this pass didn't touch that path. What changed is upstream of it: the new `imageGenerationPromptRule`'s "Brand direction" clause explicitly instructs the model to give AI-generated photography only *"a restrained nod to brand identity — never an instruction to render an actual logo, watermark, or brand name as text"* — directly implementing Section 47's *"Brand identity should generally come from the application/template layer rather than forcing giant logos into generated images."* The actual logo/watermark compositing remains entirely the template renderer's job (`lib/template-renderer/render-frame.ts`, unchanged), never the AI image provider's — this pass reinforces that separation in the prompt instructions rather than changing the renderer.
+
+No Prisma schema or migration changes were made anywhere in this pass. The new `visualDirection` field lives inside the existing `Json` `data` column on `CarouselPlan`/`StoryPlan`/`ReelPlan` (already schema-less at the database level, Zod-validated at the application layer only — see CLAUDE.md Section 19), and is `.optional()` specifically so a plan cached before this pass exists — including every real carousel/post/story/reel this session touched live — keeps parsing correctly with no backfill, no migration, and no risk to existing creation data.
+
+## 8. Testing
+
+### TypeScript / ESLint / Build
+
+- **`npx tsc --noEmit -p tsconfig.json`** — clean, zero errors. Run after every substantive change and again as a final pass.
+- **`npx eslint . --ignore-pattern '.claude/**'`** — clean, zero errors/warnings across the whole repo. (The exclusion is a pre-existing, unrelated git worktree at `.claude/worktrees/project-status-doc`, untouched by this session — confirmed via `git worktree list`, same as the previous session's report.)
+- **`npm run build`** (`next build --webpack`) — compiled successfully, twice (mid-pass and as a final check). The new route `/api/creations/[id]/carousel/slides/[order]/regenerate` appears correctly in the route table as `ƒ` (dynamic).
+
+### Local, zero-quota prompt verification
+
+- **`npm run verify:image-prompts`** — new script, executed this session. Rendered `buildCarouselPlannerPrompt` against a realistic fake research/planner brief with **zero network calls**. Output inspected by eye: the `visualDirection` JSON shape, the shared-campaign rule, and the structured per-slide prompt rule (ending in the exact "Aspect ratio 4:5. Do not render any text..." sentence) all appear correctly in the final ~7,200-character prompt.
+
+### Browser verification — real app, real (existing) data, dev server on `localhost:3000`
+
+All of the following were actually clicked/observed this session, not inferred from reading code:
+
+| Check | Result |
+|---|---|
+| Carousel Review page (`cmsyawwt5000b8gs5jm9aox60`, a real 7-slide creation) | Header now shows exactly one pill (format) plus plain-text project/Brand Kit/updated-time metadata. |
+| Keyboard navigation | Focused the viewer, dispatched a real `ArrowRight` keydown, confirmed "Slide 1 / 7" → "Slide 2 / 7" in the DOM. |
+| "Regenerate this slide" button | Renders correctly next to the active slide's headline/body/visual-suggestion card. Not clicked (would consume a real image-generation call). |
+| Hashtags | Confirmed the de-pilled, plain-text-with-tint rendering on a real Post creation's Caption/Hashtags panel. |
+| **Canva create flow — the critical bug** | Used "Reset to AI Version" (a safe, existing, non-destructive action — confirmed via its own toast: *"Canva link cleared — this creation's current media is unchanged"*) to put a real Carousel back to `NOT_LINKED`, then clicked "Edit in Canva" for real. **Confirmed via `tabs_context_mcp` that zero tabs existed until the request resolved** — no blank tab, ever, at any point. The server log confirmed a single `POST .../canva/create` request taking 5.7s. **In this automated-browser-extension environment specifically, that 5.7s delay was long enough that the page's own `window.open()` call registered as blocked** (`opened` was falsy) — the app correctly showed the "browser blocked the Canva tab… \[Open Canva\]" fallback toast, and clicking that action button opened a real, fully-rendered Canva editor (`https://www.canva.com/design/DAHSo1ub75s/…/edit`, all 7 pages present) on a fresh, always-reliable synchronous click. This is an honest, complete verification of **both** code paths this fix's popup-blocker handling exists for — not just the happy path. |
+| Post Review page (`cmsybd70b0004tds5e60yz2la`) | Confirmed unaffected by the header/hashtag styling changes; hero image + content panel render exactly as the previous session's redesign intended. |
+| Studio (`/studio`) | Not re-checked this session (no code touched this session that it depends on — `GeneratedContentSections`/`OutputPanel` weren't modified again). |
+
+**Not tested live**: a real quota-exhaustion failure on Gemini (would require deliberately exhausting real quota, against Section 15/37's explicit instruction); Story/Reel per-item image prompts against real generated media (no Story/Reel creation with a real Plan exists in this database — same honest gap noted in the previous session's report, unchanged by this pass since it didn't touch Story/Reel media generation code, only their prompt *text*); a real "Sync back from Canva" round trip (unchanged code this session, already live-verified in an earlier session).
+
+---
+
+## 9. Root Causes (summary)
+
+- **Weak image generation**: per-item `imageGenerationPrompt` was Gemini-authored from a one-line instruction with no shared campaign direction, no negative constraints, no text-safe-area guidance. Fixed at the prompt-engineering layer (Section 3) — no template-renderer or provider-architecture rewrite was needed for this part.
+- **Poor carousel visual consistency**: direct consequence of the above — no shared `visualDirection` existed for the model to apply across slides. Fixed by the same change.
+- **Media fallback problems ("generic purple slides")**: not a template-renderer bug (every composition includes a real media frame) — traced to real generation failures plus the existing, intentional Canva-placeholder-on-failure design, compounded by no provider fallback existing. The provider-fallback fix (Section 4) directly reduces how often a slide ever reaches that state.
+- **Canva blank white screen**: root-caused to a placeholder tab opened before the async Canva Design Import call resolved. Fixed by not opening any tab until the real URL is known, with a real, tested graceful-degradation path for when the browser's popup blocker still catches a slow response.
+- **Creation page UX problems**: addressed in the previous session's format-first redesign (unchanged this session) plus this session's pill/badge density reduction and keyboard-navigation addition.
+
+## 10. Files Changed
 
 **New:**
-- `components/creations/format-badge.tsx` — the format pill in the header.
-- `components/creations/truncated-title.tsx` — 2-line-clamped title with a
-  hover/focus tooltip for the full text on long titles.
-- `components/creations/workflow-status.tsx` — the 5-step lifecycle
-  indicator (Draft → Editing → Ready → Scheduled → Published).
-- `components/creations/caption-hashtags-panel.tsx` — shared Caption +
-  Hashtags section, reusing the existing `CaptionCard`/`HashtagsCard`
-  unchanged.
-- `components/creations/media-sequence-viewer.tsx` — the shared large
-  active-item viewer (prev/next, counter, thumbnail strip, failure states,
-  fullscreen zoom via the existing `MediaLightbox`) used by Carousel, Story,
-  and Reel.
-- `components/creations/post-workspace.tsx`, `carousel-workspace.tsx`,
-  `story-workspace.tsx`, `reel-workspace.tsx` — the four format-specific
-  main workspaces described in Section 3.
+- `lib/ai/visual-direction-schema.ts` — the shared `visualDirection` Zod schema.
+- `lib/ai/image-prompt-guidelines.ts` — shared prompt-rule text (`visualDirectionRule`, `imageGenerationPromptRule`, `VISUAL_DIRECTION_JSON_SHAPE`), imported by all four planner prompt builders.
+- `scripts/verify-image-prompts.ts` — zero-network local prompt-rendering check (`npm run verify:image-prompts`).
+- `app/api/creations/[id]/carousel/slides/[order]/regenerate/route.ts` — per-slide Carousel regeneration endpoint.
 
-**Not touched at all** (verified via `git status`/`git diff` scoped to this
-session): every Canva route/lib file, `regenerate/route.ts`, the AI Studio
-module, Prisma schema, Brand Kit, Connections, Settings, Projects listing,
-authentication. `CaptionCard`, `HashtagsCard`, `CarouselCard`, `StoryCard`,
-`ReelCard`, `PostContentCard`, `PostMediaPreview`, `MediaFailedState`,
-`MediaLightbox`, `GeneratedImagesGallery`, `CanvaStatusPill`,
-`CreationActions`, `DeveloperDetails`, `CreationBreadcrumbs` are all reused
-exactly as they were (the last three still imported and rendered unchanged
-by the new page).
+**Modified:**
+- `lib/ai/carousel-planner-schemas.ts`, `story-planner-schemas.ts`, `reel-planner-schemas.ts` — added optional `visualDirection` field.
+- `lib/ai/carousel-planner-prompt-builder.ts`, `post-planner-prompt-builder.ts`, `story-planner-prompt-builder.ts`, `reel-planner-prompt-builder.ts` — wired in the new shared prompt guidance.
+- `lib/ai/image-providers/manager.ts` — added cross-provider fallback (Gemini → FLUX) in `generateImage()`.
+- `lib/carousel-plan/generate-media-for-plan.ts` — added `generateMediaForCarouselSlide()`.
+- `components/creations/review-action-bar.tsx` — rewrote `editInCanva()`'s tab-opening strategy (Section 6); added inline "Opening in Canva…"/"Syncing…" button states; the earlier session's icon-only Delete button and sticky-bar shadow are unchanged.
+- `components/creations/carousel-workspace.tsx` — added "Regenerate this slide" button + handler.
+- `components/creations/media-sequence-viewer.tsx` — added keyboard arrow navigation (focusable region, `ArrowLeft`/`ArrowRight`).
+- `components/creations/hashtags-card.tsx` — de-pilled hashtag styling (shared with the Studio's preview).
+- `app/(dashboard)/creations/[id]/page.tsx` — header meta row reduced to one pill + plain text (removed the `BrandKitBadge`/project-name pill wrappers, kept `FormatBadge`).
+- `package.json` — added the `verify:image-prompts` script.
 
-## 8. Verification
+**Explicitly not touched this session** (verified via `git status`/`git diff` scope): `app/api/creations/[id]/canva/create/route.ts`, `.../canva/sync/route.ts`, `.../canva/reset/route.ts`, every OAuth route, `lib/canva/*`, `app/api/creations/[id]/regenerate/route.ts` (whole-creation regenerate), the Prisma schema, `lib/template-renderer/*`, `lib/media-resolver/service.ts`, `PostWorkspace`/`StoryWorkspace`/`ReelWorkspace`/`workflow-status.tsx`/`format-badge.tsx`/`truncated-title.tsx` (from the previous session's redesign, left as-is).
 
-- **`npx tsc --noEmit -p tsconfig.json`** — clean, zero errors. Run after
-  every substantive change and again as a final pass.
-- **`npx eslint . --ignore-pattern '.claude/**'`** — clean, zero
-  errors/warnings across the whole repo (the exclusion is a pre-existing,
-  unrelated git worktree at `.claude/worktrees/project-status-doc` on its
-  own branch, untouched by this session — confirmed via `git worktree list`).
-- **`npm run build`** (`next build --webpack`) — compiled successfully, ran
-  twice (after the first pass of new components, and again as a final check
-  after the workflow-stepper responsive fix). `/creations/[id]` remains
-  correctly `ƒ` (server-rendered); no route regressed to static.
-- **Browser verification** (local dev server, real Supabase-hosted data, no
-  new AI generations):
-  - **Carousel** — real 7-slide creation: format badge, project/Brand Kit
-    badges, "Updated X ago," workflow stepper (correctly showing "Editing"
-    while `canvaSyncStatus=EDITING`), active-slide viewer with working
-    prev/next (counter updated 1/7 → 2/7 correctly), thumbnail strip with
-    correct active-ring, active slide's text card syncing to the selected
-    slide, Caption+Hashtags panel, and the full Canva button set. Confirmed
-    via multiple screenshots.
-  - **Post** — real creation: hero image + headline/body/CTA two-column
-    layout, image badge, Caption+Hashtags panel, no duplicate caption
-    anywhere.
-  - **Story** — real (legacy) creation: format badge "Story," empty-state
-    media gallery + preserved text cards, workflow stepper, **no Canva
-    controls** (confirmed absent via accessibility-tree query, not just a
-    screenshot glance).
-  - **Reel** — two real (legacy) creations: format badge "Reel," honesty
-    banner preserved, empty-state gallery + preserved script/scene text,
-    **no Canva controls**.
-  - **Studio** (`/studio`) — confirmed unaffected: renders exactly as
-    before, still using the untouched `GeneratedContentSections`/
-    `OutputPanel`, proving this redesign is correctly scoped to the Review
-    page only.
-  - **Regenerate scoping** — confirmed present and enabled on every format
-    checked; not clicked (Section 5).
-  - **Canva** — confirmed correctly absent on Story/Reel, correctly present
-    on Post/Carousel, and a real "Edit in Canva" click on an already-linked
-    Carousel opened a genuine Canva editor tab with all 7 pages intact.
-  - **Media failure** — confirmed live on the legacy fallback path (real
-    "Generation failed" tiles, text preserved); confirmed by code identity
-    (not a fresh live click) on the new interactive path — see Section 6's
-    honest caveat.
-  - **Responsive** — **not visually confirmed**. The browser automation
-    tool's `resize_window` call reported success but the subsequent
-    screenshot still captured the desktop-width layout, so I could not get
-    a real narrow-viewport screenshot in this environment. I did not
-    fabricate a "verified on mobile" claim — instead I reviewed every new
-    component's Tailwind classes by hand (mobile-first defaults: single
-    column, `w-full` viewers that scale down to their `max-w-*` cap, `flex-wrap`
-    header, `overflow-x-auto` thumbnail strip and workflow stepper) and
-    proactively added `overflow-x-auto`/`shrink-0` to the workflow stepper
-    so it scrolls instead of clipping on a narrow screen, but this is a
-    code-review-level confidence, not a screenshot-verified one.
+## 11. Remaining Limitations (honest)
 
-## 9. Remaining Issues
+- **No live test of the provider-fallback path against a real quota failure** — verified by code reading only, per the explicit instruction not to burn real quota to test this.
+- **No live test of Story/Reel per-item image prompts against real generated media** — no Story/Reel creation with a real Plan exists in this database; the prompt-text change was verified via `verify:image-prompts` (Carousel) and by symmetry of the shared `image-prompt-guidelines.ts` module, not via a live Story/Reel generation.
+- **Per-slide regenerate is Carousel-only** — Post/Story/Reel remain whole-creation-only regeneration, matching what the existing architecture actually supports; not extended speculatively.
+- **Actual generated-image quality was not (and could not responsibly be) verified this session** — the prompt *text* was verified locally; whether Gemini's actual image output measurably improves is something only a real generation can show, and this pass deliberately didn't spend quota on that per the brief's own instruction.
+- **The known cosmetic media-type-badge limitation after a Carousel Sync back** (documented in the previous session's report) is unchanged — out of this pass's scope.
+- **Unexpected git commits/pushes** — as noted at the top, `git status` was clean before this session started because a previous session's work had already been committed/pushed by a mechanism outside any explicit tool call in this conversation. Nothing here reverses or investigates that further; flagged for visibility only.
 
-- **The new interactive Story/Reel workspace (`MediaSequenceViewer` path)
-  was not live-tested against real per-frame/per-scene media** — no Story or
-  Reel creation with a `storyPlanId`/`reelPlanId` exists in this database
-  (see Section 3's testing-coverage note). It shares its rendering logic
-  exactly with the live-verified Carousel path, but this is a genuine gap,
-  not a fabricated pass.
-- **Responsive/mobile layout was not visually verified** — see Section 8.
-  Confidence is code-review-level only.
-- **A live FAILED slide could not be found on the new interactive Carousel
-  viewer** to screenshot directly — every Phase-1C carousel available in
-  this database had already been synced clean. Verified instead via the
-  legacy fallback path (real failures, real screenshots) and by code
-  identity with the pre-existing, already-proven failure component.
-- **Unrelated, pre-existing**: `CreationStatus.APPROVED` is defined in the
-  schema but nothing in the app (old or new) ever sets it — "Approve &
-  Publish" goes straight to `PUBLISHED`. The new workflow stepper's "Ready"
-  step is therefore currently unreachable through the UI. Not something this
-  task was asked to fix; noted for accuracy rather than silently assumed
-  reachable.
-- **The unexpected git commits/push described at the top of this file** —
-  unresolved; needs your input, not a code fix.
+## 12. Final Verdict
 
-## 10. Final Verdict
-
-**Ready for review.** The Creation page now leads with the format the user
-actually selected, gives Carousel/Story/Reel a real single-item viewer
-instead of a disconnected stack of cards, keeps Post's generated visual as
-the hero element, preserves every existing Canva/Regenerate/content-vs-media
-guarantee without touching their underlying logic, and passes TypeScript,
-ESLint, and a full production build. The two honest gaps are test coverage
-(no live Story/Reel Plan data existed to exercise the new interactive path,
-and mobile viewport rendering couldn't be screenshotted in this tool
-environment) — both are code-review-confident, not screenshot-confident, and
-are called out rather than glossed over. The unexpected git push needs your
-attention before anything here goes further.
+The three highest-leverage root causes this brief asked for were found by reading the actual code (not guessed) and fixed with targeted, backward-compatible changes: structured, art-directed image prompts with a shared campaign direction; an automatic fallback to the already-configured second image provider; and a genuinely re-architected Canva "Edit in Canva" flow that keeps the user on the Creation page during the async wait and was verified — including its popup-blocker edge case — against the real, running app. Per-slide Carousel regeneration and a calmer, less pill-heavy Creation page round out the pass. `tsc`, `eslint`, and `next build` all pass clean. The two things this report is explicit about *not* claiming — measured image-quality improvement and a live quota-exhaustion fallback test — are the two things that would require spending real, paid API quota to verify, which the brief itself said not to do without genuine necessity.
