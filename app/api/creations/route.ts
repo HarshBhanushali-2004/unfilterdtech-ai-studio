@@ -18,23 +18,27 @@ import { prisma } from "@/lib/prisma";
 import { formatZodError } from "@/lib/validation";
 
 export const runtime = "nodejs";
-// Media generation (one Gemini/FLUX image call per Carousel slide, see
-// generateCarouselMediaForNewCreation below) now runs inside `after()` —
-// scheduled once the save response has already been sent (see the bottom
-// of POST below), not awaited in the request path. `after()` still runs
-// within this route's own maxDuration budget (Next.js's documented
-// behavior), so this value now bounds how long the *background* media
-// work gets, not how long the client waits — the client gets the save
-// response as soon as `prisma.creation.create` (and the evaluation call
-// above it) finish. This is what actually fixed a real production 504: a
-// CAROUSEL save used to sit open through every slide's full Gemini
-// key-rotation retry chain, and once all 5 keys AND the FLUX fallback
-// were quota-exhausted for every slide, the request itself timed out
-// before any of them could even finish persisting their own FAILED status.
-// Each slide already resolves safely to COMPLETED or FAILED without
-// throwing (see resolveAndRenderSlide/generateImageForSlot) — nothing
-// about that per-slot logic changed, only when it runs relative to the
-// response. Vercel still clamps this to whatever the deployed plan
+// Both media generation (one Gemini/FLUX image call per Carousel slide,
+// see generateCarouselMediaForNewCreation below) and AI evaluation
+// (evaluateCreation, quality score + suggestions) now run inside `after()`
+// — scheduled once the save response has already been sent (see the
+// bottom of POST below), not awaited in the request path. `after()` still
+// runs within this route's own maxDuration budget (Next.js's documented
+// behavior), so this value now bounds how long that *background* work
+// gets, not how long the client waits — the client gets the save response
+// as soon as `prisma.creation.create` finishes. This is what actually
+// fixed two real production slowdowns: a CAROUSEL save used to sit open
+// through every slide's full Gemini key-rotation retry chain (once all 5
+// keys AND the FLUX fallback were quota-exhausted for every slide, the
+// request itself timed out before any of them could even finish
+// persisting their own FAILED status), and separately, evaluateCreation's
+// own Gemini call — the last one still awaited before the response — could
+// alone cost tens of seconds under Gemini demand even once the first issue
+// was fixed. Each slide already resolves safely to COMPLETED or FAILED
+// without throwing (see resolveAndRenderSlide/generateImageForSlot), and
+// evaluateCreation already degrades to undefined scores rather than
+// throwing — nothing about that logic changed, only when it runs relative
+// to the response. Vercel still clamps this to whatever the deployed plan
 // actually allows (60s on Hobby); raise it further if that plan changes.
 export const maxDuration = 120;
 
@@ -263,12 +267,6 @@ export async function POST(request: Request) {
     const contentType = contentTypeMap[validation.data.contentType];
     const projectId: string | null = body.projectId ?? null;
 
-    const { qualityScore, suggestions } = await evaluateCreation(
-      validation.data.caption,
-      body.hashtags,
-      projectId
-    );
-
     const creation = await prisma.creation.create({
       data: {
         projectId,
@@ -295,9 +293,6 @@ export async function POST(request: Request) {
         story: body.story,
         reel: body.reel,
 
-        qualityScore,
-        suggestions,
-
         model: body.model ?? "Gemini",
       },
     });
@@ -314,18 +309,45 @@ export async function POST(request: Request) {
       (contentType === ContentType.STORY && validation.data.storyPlanId) ||
       (contentType === ContentType.REEL && validation.data.reelPlanId);
 
-    // Saving a creation must never depend on image generation succeeding
-    // (or even finishing) — a Gemini/FLUX quota exhaustion used to hold
-    // this response open for the entire per-slide retry cascade (see the
-    // maxDuration comment above). The creation row above is already fully
-    // persisted at this point; `after()` schedules this exact same,
-    // already-correct best-effort work (each call already persists its own
-    // per-slot/slide FAILED status instead of throwing — see
-    // resolveAndRenderSlide/generateImageForSlot) to run once the response
-    // below has been sent, instead of before it. Nothing about what these
-    // functions do, or how a failure is recorded, changed — only when they
-    // run relative to the HTTP response.
+    // Saving a creation must never depend on image generation — or AI
+    // evaluation — succeeding or even finishing. Both used to hold this
+    // response open (see the maxDuration comment above for the image-
+    // generation half of that history); evaluateCreation() was the one
+    // remaining Gemini call still awaited before the response, and under
+    // Gemini demand it alone could cost tens of seconds. The creation row
+    // above is already fully persisted at this point (with no
+    // qualityScore/suggestions yet — both are nullable columns); `after()`
+    // schedules this exact same, already-correct best-effort work to run
+    // once the response below has been sent, instead of before it. Nothing
+    // about what these functions do, or how a failure is recorded, changed
+    // — only when they run relative to the HTTP response.
     after(async () => {
+      // Evaluation gets its own try/catch, separate from media generation
+      // below, so a failure here can never prevent media generation from
+      // starting — the two are independent, unrelated background tasks.
+      // evaluateCreation() already catches its own errors internally and
+      // degrades to {qualityScore: undefined, suggestions: undefined}
+      // rather than throwing (see lib/creation-evaluation.ts) — this is a
+      // last-resort net for anything else (e.g. the update() call itself
+      // failing), so it's logged rather than left as an unhandled
+      // rejection, since there's no request left to return an error on.
+      try {
+        const { qualityScore, suggestions } = await evaluateCreation(
+          validation.data.caption,
+          body.hashtags,
+          projectId
+        );
+
+        if (qualityScore !== undefined || suggestions !== undefined) {
+          await prisma.creation.update({
+            where: { id: creation.id },
+            data: { qualityScore, suggestions },
+          });
+        }
+      } catch (error) {
+        console.error("Failed to evaluate creation in the background:", error);
+      }
+
       try {
         if (!supersedesLegacyImages) {
           await generateImagesForNewCreation(validation.data.visualPromptId, contentType);
