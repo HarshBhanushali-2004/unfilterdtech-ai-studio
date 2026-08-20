@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ContentType } from "@prisma/client";
 import { z } from "zod";
 
@@ -18,15 +18,24 @@ import { prisma } from "@/lib/prisma";
 import { formatZodError } from "@/lib/validation";
 
 export const runtime = "nodejs";
-// Saving a CAROUSEL creation can chain several sequential/staggered Gemini
-// image calls (one per slide, see generateCarouselMediaForNewCreation
-// below) on top of the evaluation call — comfortably past Vercel's default
-// serverless timeout. Without this, a slow save can be killed mid-flight,
-// leaving some CarouselSlideMedia rows stuck in RESOLVING/RENDERING forever
-// (never reaching COMPLETED or FAILED) — the "grey placeholder that never
-// resolves" symptom Phase 1B was asked to fix. Vercel still clamps this to
-// whatever the deployed plan actually allows (60s on Hobby); raise it
-// further if that plan changes.
+// Media generation (one Gemini/FLUX image call per Carousel slide, see
+// generateCarouselMediaForNewCreation below) now runs inside `after()` —
+// scheduled once the save response has already been sent (see the bottom
+// of POST below), not awaited in the request path. `after()` still runs
+// within this route's own maxDuration budget (Next.js's documented
+// behavior), so this value now bounds how long the *background* media
+// work gets, not how long the client waits — the client gets the save
+// response as soon as `prisma.creation.create` (and the evaluation call
+// above it) finish. This is what actually fixed a real production 504: a
+// CAROUSEL save used to sit open through every slide's full Gemini
+// key-rotation retry chain, and once all 5 keys AND the FLUX fallback
+// were quota-exhausted for every slide, the request itself timed out
+// before any of them could even finish persisting their own FAILED status.
+// Each slide already resolves safely to COMPLETED or FAILED without
+// throwing (see resolveAndRenderSlide/generateImageForSlot) — nothing
+// about that per-slot logic changed, only when it runs relative to the
+// response. Vercel still clamps this to whatever the deployed plan
+// actually allows (60s on Hobby); raise it further if that plan changes.
 export const maxDuration = 120;
 
 const contentTypeMap: Record<string, ContentType> = {
@@ -305,13 +314,35 @@ export async function POST(request: Request) {
       (contentType === ContentType.STORY && validation.data.storyPlanId) ||
       (contentType === ContentType.REEL && validation.data.reelPlanId);
 
-    if (!supersedesLegacyImages) {
-      await generateImagesForNewCreation(validation.data.visualPromptId, contentType);
-    }
-    await generateCarouselMediaForNewCreation(validation.data.carouselPlanId, contentType, projectId);
-    await generatePostMediaForNewCreation(validation.data.postPlanId, contentType, projectId);
-    await generateStoryMediaForNewCreation(validation.data.storyPlanId, contentType, projectId);
-    await generateReelMediaForNewCreation(creation.id, validation.data.reelPlanId, contentType, projectId);
+    // Saving a creation must never depend on image generation succeeding
+    // (or even finishing) — a Gemini/FLUX quota exhaustion used to hold
+    // this response open for the entire per-slide retry cascade (see the
+    // maxDuration comment above). The creation row above is already fully
+    // persisted at this point; `after()` schedules this exact same,
+    // already-correct best-effort work (each call already persists its own
+    // per-slot/slide FAILED status instead of throwing — see
+    // resolveAndRenderSlide/generateImageForSlot) to run once the response
+    // below has been sent, instead of before it. Nothing about what these
+    // functions do, or how a failure is recorded, changed — only when they
+    // run relative to the HTTP response.
+    after(async () => {
+      try {
+        if (!supersedesLegacyImages) {
+          await generateImagesForNewCreation(validation.data.visualPromptId, contentType);
+        }
+        await generateCarouselMediaForNewCreation(validation.data.carouselPlanId, contentType, projectId);
+        await generatePostMediaForNewCreation(validation.data.postPlanId, contentType, projectId);
+        await generateStoryMediaForNewCreation(validation.data.storyPlanId, contentType, projectId);
+        await generateReelMediaForNewCreation(creation.id, validation.data.reelPlanId, contentType, projectId);
+      } catch (error) {
+        // Every call above already has its own try/catch and persists a
+        // FAILED status rather than throwing — this is a last-resort net
+        // so a truly unexpected error surfaces in server logs instead of
+        // as an unhandled rejection, since there's no request left to
+        // return an error response on.
+        console.error("Background media generation failed unexpectedly:", error);
+      }
+    });
 
     return NextResponse.json({
       success: true,

@@ -196,6 +196,48 @@ async function main() {
     }
   })
 
+  // The three scenarios below close gaps found while auditing the key
+  // manager for a suspected rotation bug (none was found — see ABOUT.md):
+  // discovery of an all-missing config, correct skipping of a blank
+  // numbered slot, and the documented GEMINI_API_KEY_1-over-legacy
+  // precedence, none of which had an explicit assertion before this pass.
+
+  await scenario("Zero configured keys fails immediately with no attempts and no leaked internals", async () => {
+    // resetEnv() (called by scenario() above) already clears every
+    // GEMINI_API_KEY* var — this scenario deliberately sets none.
+    behavior = () => "ok"
+
+    try {
+      await generateWithGemini({ prompt: "test" })
+      throw new Error("expected generateWithGemini to throw")
+    } catch (error) {
+      assert(error instanceof AIServiceError, "should throw AIServiceError, not something unexpected")
+      assert((error as AIServiceError).status === 503, "should surface as a 503")
+      assert(calls.length === 0, `should never attempt a network call with zero keys configured, got ${calls.length}`)
+    }
+  })
+
+  await scenario("A blank GEMINI_API_KEY_1 falls back to legacy GEMINI_API_KEY, not a phantom empty key", async () => {
+    setEnv({ GEMINI_API_KEY_1: "", GEMINI_API_KEY: "key-1", GEMINI_MODEL: "model-a" })
+    behavior = () => "ok"
+
+    const result = await generateWithGemini({ prompt: "test" })
+
+    assert(result === "generated text", "should succeed using the legacy key")
+    assert(calls.length === 1, `expected exactly 1 attempt (one real key, no phantom blank slot), got ${calls.length}`)
+    assert(calls[0].apiKey === "key-1", "should have used the legacy GEMINI_API_KEY value")
+  })
+
+  await scenario("GEMINI_API_KEY_1 takes precedence over legacy GEMINI_API_KEY when both are set", async () => {
+    setEnv({ GEMINI_API_KEY_1: "key-numbered", GEMINI_API_KEY: "key-legacy", GEMINI_MODEL: "model-a" })
+    behavior = () => "ok"
+
+    await generateWithGemini({ prompt: "test" })
+
+    assert(calls.length === 1, `expected exactly 1 key in slot 1 (no duplicate legacy attempt), got ${calls.length}`)
+    assert(calls[0].apiKey === "key-numbered", "GEMINI_API_KEY_1 should win over legacy GEMINI_API_KEY")
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 }
